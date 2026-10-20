@@ -10,6 +10,8 @@
 //! **闭环校正逻辑与源墨迹无关**（它只要求拿到「某个字符的二值掩码」），
 //! 所以换掉掩码来源之后，适配与校正那一整套原样保留，无需重调参。
 
+use std::collections::HashMap;
+
 use crate::raster::Canvas;
 use crate::theme::{self, Metrics, GLYPH_BOX, GLYPH_OFFSET};
 
@@ -17,7 +19,21 @@ use crate::theme::{self, Metrics, GLYPH_BOX, GLYPH_OFFSET};
 /// 这样细笔画不会在量化时消失。
 const PROBE_EM: f32 = 96.0;
 
-/// 字族回退顺序。三平台各取一份系统粗体，缺失的自动跳过。
+/// **内嵌**的格内数字字体。
+///
+/// 为什么不走系统字体：三平台会加载到三个不同的粗体（macOS Arial Bold /
+/// Windows arialbd / Linux DejaVuSans-Bold），字形不同 → 像素不同 →
+/// **一套渲染基线无法在三平台同时成立**。
+/// 实测：把回退表里的 Arial Bold 换成 Verdana Bold，15 张基线里 9 张失败。
+///
+/// 选 Liberation Sans Bold 是因为 SIL OFL 1.1 允许原样再分发，且与 Arial
+/// **度量兼容**，字形观感与原先最接近。详见 `assets/fonts/README.md`。
+const DIGIT_FONT: &[u8] = include_bytes!("../../../../assets/fonts/LiberationSans-Bold.ttf");
+const DIGIT_FONT_NAME: &str = "内嵌 Liberation Sans Bold";
+
+/// 系统字体的回退顺序。**只用于排查**（`--glyphdiag` 对比、测试）。
+///
+/// 生产路径走 [`FontStack::load_default`]，用的是内嵌字体 —— 那是三平台一致的唯一办法。
 pub const DEFAULT_FAMILIES: &[&str] = &[
     // Windows
     "C:/Windows/Fonts/arialbd.ttf",
@@ -84,9 +100,26 @@ impl FontStack {
         }
     }
 
-    /// 用内置的回退表加载。
+    /// 用**内嵌**字体建栈。这是生产路径 —— 三平台字形因此完全一致。
+    ///
+    /// 内嵌字体解析失败时返回空栈，此时 [`FontStack::render_glyph`] 一律返回 `None`，
+    /// 画面缺数字但不崩溃。
     pub fn load_default() -> FontStack {
-        FontStack::load(DEFAULT_FAMILIES)
+        let mut faces = Vec::new();
+        if let Ok(f) = fontdue::Font::from_bytes(
+            DIGIT_FONT,
+            fontdue::FontSettings {
+                collection_index: 0,
+                ..Default::default()
+            },
+        ) {
+            faces.push((DIGIT_FONT_NAME.to_string(), f));
+        }
+        FontStack {
+            faces,
+            masks: HashMap::new(),
+            sprites: HashMap::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
