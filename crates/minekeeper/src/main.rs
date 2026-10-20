@@ -438,6 +438,19 @@ impl AppHandler for App {
             return;
         }
 
+        // 0) 焦点事件必须在「界面是否挡住游戏」的过滤**之前**处理。
+        //    否则开着菜单或对话框时切换应用，失焦收不到，秒表会在后台继续走。
+        if let InputEvent::Focus(focused) = ev {
+            self.focused = focused;
+            if !focused {
+                self.stop_clock(host);
+            }
+            // after_input 同时看 focused，失焦时不会把表重新装上。
+            self.after_input(host);
+            self.flush(host);
+            return;
+        }
+
         // 1) 界面优先
         if let Some(ce) = self.to_chrome(&ev) {
             let (w, h) = (self.window_w(), self.window_h());
@@ -447,7 +460,11 @@ impl AppHandler for App {
                     return;
                 }
                 ChromeOutcome::Redraw => {
-                    host.invalidate(&[]);
+                    // 对话框可能就是在这次 handle 里提交的（点名、自定义雷区、重新计分），
+                    // 结果必须**当场**消费掉。早先这里直接 return，结果要等下一次输入
+                    // 才被 poll_dialogs 取走 —— 提交姓名后立刻关窗口，纪录就丢了。
+                    self.poll_dialogs(host);
+                    self.flush(host);
                     return;
                 }
                 ChromeOutcome::Ignored => {} // 落到游戏
@@ -472,12 +489,7 @@ impl AppHandler for App {
                     .open_message("扫雷帮助", mk_core::chrome::HELP_USING);
             }
             InputEvent::KeyDown(k) => self.view.key_down(k),
-            InputEvent::Focus(focused) => {
-                self.focused = focused;
-                if !focused {
-                    self.stop_clock(host);
-                }
-            }
+            // Focus 已在函数开头处理（不能被「界面挡着」的过滤拦下）。
             _ => {}
         }
 

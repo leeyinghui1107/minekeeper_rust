@@ -879,9 +879,17 @@ impl Chrome {
                                         // 上半区加，下半区减
                                         let delta = if y < arrow.y + arrow.h / 2 { 1 } else { -1 };
                                         *focus = i;
+                                        // **必须先夹再算**：数值框允许玩家暂时输入 0
+                                        // （甚至留空），`max_mines_for(0, 0)` 是 -10，
+                                        // 小于 `MIN_MINES`，后面的 `clamp(lo, hi)` 会 panic。
+                                        // release 配置下 panic=abort，等于直接崩进程。
                                         let max_mines = Difficulty::max_mines_for(
-                                            rows.value().unwrap_or(Difficulty::MIN_ROWS),
-                                            cols.value().unwrap_or(Difficulty::MIN_COLS),
+                                            rows.value()
+                                                .unwrap_or(Difficulty::MIN_ROWS)
+                                                .clamp(Difficulty::MIN_ROWS, Difficulty::MAX_ROWS),
+                                            cols.value()
+                                                .unwrap_or(Difficulty::MIN_COLS)
+                                                .clamp(Difficulty::MIN_COLS, Difficulty::MAX_COLS),
                                         );
                                         let (lo, hi, field) = match i {
                                             0 => (
@@ -1544,6 +1552,43 @@ mod tests {
         );
         assert_eq!(c.take_dialog_result(), Some(DialogResult::ResetScores));
         assert!(!c.is_modal(), "点重新计分后对话框应交由应用重开");
+    }
+
+    /// 数值框里的行列被改成 0 时，点雷数箭头不得 panic。
+    ///
+    /// `max_mines_for(0, 0)` 是 -10，小于 `MIN_MINES`，未经夹取就传给 `clamp(lo, hi)`
+    /// 会直接 panic；release 配置下 panic=abort，等于崩进程。
+    #[test]
+    fn spin_arrow_survives_zero_rows() {
+        let (mut c, mut t) = chrome();
+        c.open_custom(24, 30, 199);
+        let frame = c.dialog_layout(800, 700, &mut t).unwrap().frame;
+        let geo = custom_rows(frame);
+
+        // 把「高度」清空再填 0
+        for _ in 0..4 {
+            c.handle(ChromeEvent::Backspace, 800, 700, &mut t);
+        }
+        c.handle(ChromeEvent::Text("0".into()), 800, 700, &mut t);
+
+        // 点雷数箭头的上半区（+1）—— 这里过去会 panic
+        let (_, mines_arrow) = geo[2];
+        c.handle(
+            ChromeEvent::Click(mines_arrow.x + 5, mines_arrow.y + 3),
+            800,
+            700,
+            &mut t,
+        );
+
+        let mines = match &c.dialog.as_ref().unwrap().kind {
+            DialogKind::Custom { mines, .. } => mines.value().unwrap(),
+            _ => unreachable!(),
+        };
+        // 上限按夹取后的行列算：max_mines_for(5, 30) = 140
+        assert!(
+            (Difficulty::MIN_MINES..=140).contains(&mines),
+            "雷数被算成 {mines}，越界"
+        );
     }
 
     /// 自定义雷区的上下箭头必须真的能改数值，并被夹在合法范围内。

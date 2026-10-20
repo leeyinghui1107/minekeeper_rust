@@ -48,7 +48,7 @@ dist/
   macos/minekeeper-cli              通用命令行
   windows-x64/minekeeper.exe        PE Subsystem = 2 (GUI)，双击不闪控制台
   windows-x64/minekeeper-cli.exe
-  linux-x64/minekeeper              静态 musl ELF
+  linux-x64/minekeeper              Linux GUI（仅本机构建，见下）
   linux-x64/minekeeper-cli
   SHA256SUMS
 ```
@@ -57,9 +57,15 @@ dist/
 `x86_64-pc-windows-gnu` / `x86_64-unknown-linux-musl`，以及 Homebrew 的 `mingw-w64`
 （提供 `dlltool`，Windows 交叉链接必需）。缺任何一个都可以用 `--install-deps` 让脚本自己装。
 
-**Linux 的两条路径**：在 Linux 上构建走本机 `x86_64-unknown-linux-gnu`，**带音频**；
-在 macOS/Windows 上交叉构建走 `x86_64-unknown-linux-musl`，静态 ELF 但**没有声音**
-（交叉编译拿不到 ALSA 头文件）。要完整的 Linux 版请在 Linux 上构建或走 CI。
+**Linux 的两条路径**：在 Linux 上构建走本机 `x86_64-unknown-linux-gnu`，出 GUI + CLI，
+带音频；在 macOS/Windows 上交叉构建走 `x86_64-unknown-linux-musl`，**只出 CLI**。
+
+交叉不产 GUI 是刻意的：静态 musl 没有动态加载器，`dlopen` 必然失败，而 winit 的
+X11/Wayland 后端正是靠 `libloading` 在运行时打开 `libX11` / `libwayland-client`。
+那样出来的 GUI 能编译能链接，但一建窗口就失败，不该发布。
+CLI 不碰窗口栈，所以静态 musl 下可以正常工作。
+
+Linux 的 GUI 请在 Linux 上构建，或取 CI `build-gui (ubuntu)` 的产物。
 
 脚本会先跑一遍自检，再验证产物（macOS 查双架构、Windows 查 PE 子系统），
 不是「构建成功就算完」。

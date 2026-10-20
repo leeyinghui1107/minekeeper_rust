@@ -15,7 +15,7 @@
 #   dist/macos/minekeeper-cli          macOS 通用命令行（自检 / 出图 / 比对）
 #   dist/windows-x64/minekeeper.exe    Windows GUI（PE 子系统 = GUI，无控制台）
 #   dist/windows-x64/minekeeper-cli.exe
-#   dist/linux-x64/minekeeper        静态 musl（macOS 交叉编译时无音频）
+#   dist/linux-x64/minekeeper        Linux 本机构建才有（交叉构建只出 CLI）
 #   dist/SHA256SUMS
 #
 # 依赖（macOS 上）：
@@ -257,31 +257,44 @@ build_linux() {
         cp target/release/minekeeper-cli "$out/"
         ok "含 ALSA 音频"
     else
-        say "Linux：交叉编译到 x86_64-unknown-linux-musl（静态）"
+        say "Linux：交叉编译到 x86_64-unknown-linux-musl（静态，仅 CLI）"
         ensure_target x86_64-unknown-linux-musl
 
-        # 交叉编译拿不到 ALSA 头文件（alsa-sys 编译期依赖），关掉音频降级为静音。
-        # musl 把 dlopen 合进了 libc，没有单独的 libdl.a，用一个链接脚本占位。
+        # 只产出 CLI，**不产出 GUI**。
+        #
+        # 静态 musl 没有动态加载器，`dlopen` 必然失败；而 winit 的 X11/Wayland
+        # 后端正是通过 libloading 在运行时 dlopen libX11 / libwayland-client
+        # （依赖图里能看到 x11-dl、wayland-client、libloading）。
+        # 交叉出来的 GUI 能编译、能链接，但一建窗口就失败 —— 那是不该发布的产物。
+        #
+        # CLI 完全不碰窗口栈（依赖图里 winit/libloading 命中数为 0），静态 musl 下可以正常工作。
+        #
+        # 交叉编译也拿不到 ALSA 头文件，所以关掉音频（CLI 本来就不用音频）。
+
         local stub="$DIST/.musl-stub"
         mkdir -p "$stub"
         printf '/* musl: dlopen 已在 libc 内，无需单独的 libdl */\n' > "$stub/libdl.a"
 
         RUSTFLAGS="-C linker=rust-lld -C link-arg=-L$stub" \
             cargo build --release --target x86_64-unknown-linux-musl \
-            -p minekeeper -p minekeeper-cli --no-default-features
+            -p minekeeper-cli --no-default-features
         rm -rf "$stub"
 
-        cp target/x86_64-unknown-linux-musl/release/minekeeper "$out/"
         cp target/x86_64-unknown-linux-musl/release/minekeeper-cli "$out/"
-        warn "交叉构建的 Linux 版**没有音频**（缺 ALSA）。要完整版请在 Linux 上构建或走 CI。"
+        warn "交叉构建只产出 CLI。Linux 的 GUI 必须在 Linux 上构建，或取 CI 的 build-gui (ubuntu) 产物。"
     fi
 
-    # 静态 ELF 的校验：确认真的是 x86-64 ELF，不是误产出的 Mach-O/PE。
-    if ! file -b "$out/minekeeper" | grep -q "ELF 64-bit.*x86-64"; then
-        die "$out/minekeeper 不是 x86-64 ELF"
-    fi
-    ok "ELF x86-64"
-    ok "$out/minekeeper"
+    # ELF 校验：确认真的是 x86-64 ELF，不是误产出的 Mach-O/PE。
+    local verified=0
+    for f in "$out/minekeeper" "$out/minekeeper-cli"; do
+        [ -f "$f" ] || continue
+        if ! file -b "$f" | grep -q "ELF 64-bit.*x86-64"; then
+            die "$f 不是 x86-64 ELF"
+        fi
+        ok "ELF x86-64  $(basename "$f")"
+        verified=1
+    done
+    [ "$verified" -eq 1 ] || die "Linux 没有产出任何文件"
 }
 
 # ── 执行 ────────────────────────────────────────────────────────────────────

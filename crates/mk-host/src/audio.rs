@@ -24,6 +24,14 @@ pub fn open_default() -> Box<dyn Player> {
     }
 }
 
+/// 每个**输出帧**应消耗多少个源采样。
+///
+/// 22050 → 44100 要插值，每帧只前进 0.5 个源采样；反过来才是 2.0。
+/// 早期写成 `out_rate / RATE`，方向恰好颠倒：44.1kHz 设备上音效会快一倍、高八度。
+fn source_step(out_rate: u32) -> f64 {
+    mk_core::sound::RATE as f64 / out_rate.max(1) as f64
+}
+
 #[cfg(feature = "audio")]
 mod cpal_backend {
     use super::decode_pcm8;
@@ -75,7 +83,7 @@ mod cpal_backend {
 
             {
                 let mut s = shared.lock().ok()?;
-                s.ratio = out_rate / mk_core::sound::RATE as f64;
+                s.ratio = super::source_step(out_rate as u32);
             }
 
             let shared = shared.clone();
@@ -87,7 +95,22 @@ mod cpal_backend {
                             out.fill(0.0);
                             return;
                         };
+                        // 队列空时**不要**推进 `pos`：早期写法会让它一直涨，
+                        // 等下一段音效入队时 `pos` 早已越界，整段被当成静音消费掉 ——
+                        // 表现就是「闲置一会儿之后第一次音效没声音」。
+                        if s.queue.is_empty() {
+                            out.fill(0.0);
+                            s.pos = 0.0;
+                            return;
+                        }
                         for frame in out.chunks_mut(channels) {
+                            if s.queue.is_empty() {
+                                s.pos = 0.0;
+                                for sample in frame.iter_mut() {
+                                    *sample = 0.0;
+                                }
+                                continue;
+                            }
                             // 线性重采样：按 ratio 推进源位置。
                             let idx = s.pos.floor() as usize;
                             let frac = (s.pos - idx as f64) as f32;
@@ -163,6 +186,16 @@ fn decode_pcm8(wav: &[u8]) -> Option<Vec<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 重采样比例的方向：输出率更高时，每帧应消耗**更少**的源采样。
+    #[test]
+    fn source_step_direction() {
+        assert!((source_step(mk_core::sound::RATE) - 1.0).abs() < 1e-9);
+        assert!((source_step(44100) - 0.5).abs() < 1e-9);
+        assert!(source_step(48000) < 0.5);
+        // 反向输出率（如 11025）时每帧消耗 2 个源采样
+        assert!((source_step(11025) - 2.0).abs() < 1e-9);
+    }
 
     #[test]
     fn decode_rejects_non_wav() {

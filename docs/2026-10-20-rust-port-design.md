@@ -1642,7 +1642,7 @@ dist/
   macos/minekeeper-cli      通用命令行（自检 / 出图 / 比对）
   windows-x64/minekeeper.exe      PE Subsystem = 2 (GUI)，无控制台
   windows-x64/minekeeper-cli.exe
-  linux-x64/minekeeper            静态 musl ELF（见下）
+  linux-x64/minekeeper            Linux GUI（**仅本机构建**，见下）
   linux-x64/minekeeper-cli
   SHA256SUMS
 ```
@@ -1664,19 +1664,28 @@ cargo build --release -p minekeeper-cli
 
 | 宿主 | 目标 | 音频 | 产物 |
 |---|---|---|---|
-| Linux | 本机 `x86_64-unknown-linux-gnu` | **有**（ALSA） | 动态链接 ELF |
-| macOS / Windows | 交叉到 `x86_64-unknown-linux-musl` | **无**（缺 ALSA 头文件） | 静态 pie ELF |
+| Linux | 本机 `x86_64-unknown-linux-gnu` | **有**（ALSA） | GUI + CLI，动态链接 ELF |
+| macOS / Windows | 交叉到 `x86_64-unknown-linux-musl` | 无（CLI 不用音频） | **只有 CLI**，静态 pie ELF |
 
-交叉路径有两处必须绕开：
+**交叉构建不产出 GUI，这是刻意的。** 静态 musl 没有动态加载器，`dlopen` 必然失败；
+而 `winit` 的 X11 / Wayland 后端正是通过 `libloading` 在运行时 dlopen
+`libX11` / `libwayland-client`（`cargo tree` 里能看到 x11-dl、wayland-client、libloading）。
+交叉出来的 GUI **能编译、能链接，但一建窗口就失败** —— 那种产物不该发布。
+
+CLI 完全不碰窗口栈（对同一目标做依赖查询，winit/libloading 命中数为 0），
+所以静态 musl 下可以正常工作。Linux 的 GUI 请在 Linux 上构建，或取 CI
+`build-gui (ubuntu)` 的产物。
+
+交叉路径另有两处必须绕开：
 
 1. **音频**。`cpal` 在 Linux 上经 `alsa-sys` 编译，需要 `libasound` 头文件。
    交叉编译拿不到，所以 `mk-host` 的 `audio` 做成可选 feature，交叉时
    `--no-default-features` 关掉，播放自动降级为 [`SilentPlayer`]。
    **这个 feature 没有放进 `mk-host` 的 `default`** —— 放进去之后
    `workspace = true` 的依赖写法无法可靠地覆盖 `default-features`，关了也白关。
-2. **`-ldl`**。musl 把 `dlopen` 合进了 libc，没有单独的 `libdl.a`，
-   而 `x11-dl` / `wayland-sys` 仍会 `-ldl`。脚本在临时目录放一个内容为注释的
-   链接脚本冒充 `libdl.a`，`rust-lld` 按链接脚本解析，等于空输入。
+2. **`-ldl`**。musl 没有单独的 `libdl.a`，而 `x11-dl` / `wayland-sys` 仍会 `-ldl`
+   （现在交叉只编 CLI，理论上碰不到，但保留这层兜底）。脚本在临时目录放一个内容
+   为注释的链接脚本冒充 `libdl.a`，`rust-lld` 按链接脚本解析，等于空输入。
 
 另外交叉链接必须显式指定 `-C linker=rust-lld` —— 默认会用宿主机的 `cc`，
 而 macOS 的 `ld` 不认识 `--as-needed`、`-Bstatic` 这些 ELF 参数。
@@ -1689,7 +1698,8 @@ cargo build --release -p minekeeper-cli
 | x86_64-apple-darwin | 1.39 MB | 1.45 MB |
 | **macOS 通用（lipo）** | **2.64 MB** | **2.67 MB** |
 | x86_64-pc-windows-gnu | 1.52 MB | 1.48 MB |
-| x86_64-linux-musl（静态） | **2.67 MB** | 1.62 MB |
+| x86_64-linux-gnu（本机，含音频） | **2.61 MB** | — |
+| x86_64-linux-musl（静态，仅 CLI） | — | 1.62 MB |
 
 Linux 静态目标比另外两个大一倍，因为 musl 把 libc 和所有依赖都静态链进去了。
 
