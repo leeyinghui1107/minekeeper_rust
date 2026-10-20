@@ -648,6 +648,91 @@ fn main() {
 }
 
 #[cfg(test)]
+mod integration_tests {
+    use super::*;
+
+    /// 造一个没有窗口的宿主 —— `WinitHost` 在 `resumed` 之前不会建窗口，
+    /// 而 `set_timer` / `kill_timer` 只动结构体字段，所以计时器逻辑可以脱离窗口测试。
+    fn harness() -> (App, WinitHost) {
+        let app = App::new(Size::Medium, None);
+        let host = WinitHost::new(WindowSpec {
+            width: 747,
+            height: 688,
+            title: "test",
+        });
+        (app, host)
+    }
+
+    /// 把 App 推进到「本局已开始、表正在跑」的状态。
+    fn start_playing(app: &mut App, host: &mut WinitHost) {
+        app.view
+            .board_mut()
+            .left_click(mk_core::game::Pos::new(0, 0));
+        assert_eq!(app.view.board().phase, game::Phase::Playing);
+        app.clock_running = true;
+        host.set_timer(CLOCK_TIMER, 1000);
+    }
+
+    /// 从菜单换难度后，旧计时器必须停下，新棋盘停在 Ready / 000。
+    ///
+    /// 这是审计报的同一类缺陷：换棋盘不经过 `after_input`，早先漏了计时同步。
+    #[test]
+    fn menu_difficulty_stops_the_clock() {
+        let (mut app, mut host) = harness();
+        start_playing(&mut app, &mut host);
+
+        app.command(&mut host, Command::Beginner);
+
+        assert_eq!(
+            app.view.board().phase,
+            game::Phase::Ready,
+            "新棋盘应是 Ready"
+        );
+        assert_eq!(app.view.board().seconds, 0, "新棋盘计时应为 0");
+        assert!(!app.clock_running, "换难度后旧表仍在跑");
+    }
+
+    /// 自定义雷区对话框确认后同样必须停表 —— 审计实测到的正是这条路径。
+    #[test]
+    fn custom_dialog_stops_the_clock() {
+        let (mut app, mut host) = harness();
+        start_playing(&mut app, &mut host);
+
+        app.chrome.open_custom(9, 9, 10);
+        let out = app
+            .chrome
+            .handle(ChromeEvent::Enter, 747, 688, &mut app.text);
+        assert_eq!(out, ChromeOutcome::Redraw, "回车应提交对话框");
+
+        app.poll_dialogs(&mut host);
+
+        assert_eq!(
+            app.view.board().phase,
+            game::Phase::Ready,
+            "新棋盘应是 Ready"
+        );
+        assert_eq!(app.view.board().rows, 9, "应当应用自定义行列");
+        assert!(!app.clock_running, "确认自定义后旧表仍在跑");
+    }
+
+    /// 反过来：新棋盘上翻第一格，表必须重新开始走。
+    #[test]
+    fn first_click_restarts_the_clock() {
+        let (mut app, mut host) = harness();
+        start_playing(&mut app, &mut host);
+        app.command(&mut host, Command::Beginner);
+        assert!(!app.clock_running);
+
+        app.view
+            .board_mut()
+            .left_click(mk_core::game::Pos::new(8, 8));
+        app.after_input(&mut host);
+
+        assert!(app.clock_running, "新棋盘翻格后表应重新开始");
+    }
+}
+
+#[cfg(test)]
 mod clock_tests {
     use super::{clock_action, ClockAction};
     use mk_core::game::Phase;
