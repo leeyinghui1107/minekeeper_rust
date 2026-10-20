@@ -735,6 +735,20 @@ mod integration_tests {
         );
     }
 
+    /// 英雄榜打开期间同样不暂停 —— 规则是「任何对话框都不暂停」，
+    /// 不为某个对话框单独开口子（已废弃的 Go 版曾让英雄榜停表，这里不沿用）。
+    #[test]
+    fn scores_dialog_open_keeps_the_clock_running() {
+        let (mut app, mut host) = harness();
+        start_playing(&mut app, &mut host);
+
+        app.command(&mut host, Command::Scores);
+
+        assert!(app.chrome.is_modal(), "应当弹出模态对话框");
+        assert!(app.clock_running, "英雄榜打开期间仍应计时");
+        assert_eq!(app.view.board().phase, game::Phase::Playing, "对局未被中断");
+    }
+
     /// 反过来：新棋盘上翻第一格，表必须重新开始走。
     #[test]
     fn first_click_restarts_the_clock() {

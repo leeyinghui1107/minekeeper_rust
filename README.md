@@ -8,7 +8,7 @@ Windows XP `winmine.exe` 的行为复刻，用 Rust 从零实现，**三平台�
 
 ## 与 Go 版的关系
 
-| | Go 版（`../go`） | Rust 版（本目录） |
+| | Go 版（`../go`，**已废弃**） | Rust 版（本目录，唯一维护） |
 |---|---|---|
 | 平台 | 仅 Windows x64 | Windows / macOS / Linux |
 | 渲染 | GDI+（Windows）/ 自研（其他） | `tiny-skia`，三平台同一份 |
