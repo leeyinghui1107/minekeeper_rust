@@ -1659,6 +1659,10 @@ dist/
 （macOS 用 `lipo -info` 确认双架构；Windows 读 PE 可选头的 Subsystem，必须是 2，
 否则说明 `#![windows_subsystem]` 被删了、双击会闪控制台）。
 
+**发布自动化**：打 tag（`v*`）时 CI 自动产出三平台压缩包并创建 GitHub Release。
+`package` 与 `release` 两个 job 只在 tag 上跑；打包走的是 `./scripts/build-all.sh --release`，
+和本地同一条路径 —— CI 里不另写一套打包逻辑，避免两边慢慢漂移。
+
 **版本号一致性**：`Cargo.toml` 是唯一权威，另有四处必须与它相同 ——
 `scripts/build-all.sh` 的 `VERSION=`、设计文档头部、`CHANGELOG` 最新条目，
 以及（tag 触发 CI 时）tag 本身。这四处靠手动对齐，漏改不会有任何报错，

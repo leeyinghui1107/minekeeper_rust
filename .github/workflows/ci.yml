@@ -130,3 +130,131 @@ jobs:
             target/release/minekeeper
             target/release/minekeeper.exe
           if-no-files-found: ignore
+
+  # 发布包：只在打 tag 时产出。走的是和本地完全相同的
+  # `./scripts/build-all.sh --<平台> --release`，所以 CI 的包和本机构建的是同一回事，
+  # 不存在「CI 里另写一套打包逻辑」这种会慢慢漂移的东西。
+  package:
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk libasound2-dev xvfb libxkbcommon-x11-0
+
+      - name: build and package
+        shell: bash
+        run: |
+          set -e
+          case "$RUNNER_OS" in
+            macOS)   flag=--macos ;;
+            Linux)   flag=--linux ;;
+            Windows) flag=--windows ;;
+          esac
+          # macOS 会同时编 arm64 与 x86_64 再 lipo 成通用包；Windows/Linux 编本机。
+          ./scripts/build-all.sh "$flag" --release
+
+      # 包里的二进制必须真的能起窗口。Linux 无显示设备，用 Xvfb。
+      - name: smoke test packaged gui
+        shell: bash
+        run: |
+          set -e
+          case "$RUNNER_OS" in
+            macOS)   bin="dist/macos/MineKeeper.app/Contents/MacOS/minekeeper" ;;
+            Linux)   bin="dist/linux-x64/minekeeper" ;;
+            Windows) bin="dist/windows-x64/minekeeper.exe" ;;
+          esac
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a "$bin" --smoke-test
+          else
+            "$bin" --smoke-test
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          # 只传压缩包：SHA256SUMS 由 release job 在合并后统一生成，
+          # 三个平台各传一份同名文件会互相覆盖。
+          path: dist/release/MineKeeper-*
+          if-no-files-found: error
+
+  # 汇总所有平台产物，创建 GitHub Release。
+  # 用 runner 自带的 gh CLI 而不是再引一个第三方 action —— 少一个供应链面。
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist/release
+          merge-multiple: true
+
+      - name: checksums
+        run: |
+          set -e
+          cd dist/release
+          ls -l
+          sha256sum MineKeeper-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          tag="$GITHUB_REF_NAME"
+          ver="${tag#v}"
+
+          # 前半段是固定的下载说明与首次运行提示（与手工发布会话里写的一致），
+          # 后半段从 CHANGELOG 抽本版本的小节。抽不到就只留前半段。
+          {
+            cat <<HDR
+          Windows XP 扫雷的行为复刻，三平台原生运行。全部图元由代码现画，不含任何微软原版代码或素材。
+
+          ## 下载
+
+          | 平台 | 文件 | 说明 |
+          |---|---|---|
+          | macOS | \`MineKeeper-v${ver}-macos-universal.zip\` | 通用包（Apple Silicon + Intel），解压后双击 \`MineKeeper.app\` |
+          | Windows | \`MineKeeper-v${ver}-windows-x64.zip\` | 解压后双击 \`minekeeper.exe\` |
+          | Linux | \`MineKeeper-v${ver}-linux-x64.tar.gz\` | 解压后运行 \`./minekeeper\` |
+
+          每个包都附带 \`minekeeper-cli\`：无窗口的自检 / 出图 / 基线比对工具。
+
+          ## 首次运行提示
+
+          - **macOS**：包是 **ad-hoc 签名**，没有开发者证书与公证。首次打开若被 Gatekeeper 拦下，
+            右键 →「打开」，或在「系统设置 → 隐私与安全性」里放行。
+          - **Windows**：未做代码签名，SmartScreen 可能提示「未知发布者」，选择「仍要运行」。
+          - **Linux**：需要 \`libxkbcommon-x11\` 等 X11 运行库，桌面发行版通常已有；
+            无中键的触控板用户可在「游戏 → 单击快速展开」里开启左键快速展开。
+
+          ## 本版内容
+          HDR
+            awk -v h="## [v$ver]" 'index($0,h)==1{f=1;next} /^## \[/{f=0} f' CHANGELOG.md
+          } > /tmp/notes.md
+          # 幂等：重跑同一个 tag 时更新已有 release，而不是报错。
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # 已存在：换资产 + 刷新说明。只 upload 的话说明会停在旧版本。
+            gh release upload "$tag" dist/release/* --clobber
+            gh release edit "$tag" --notes-file /tmp/notes.md
+          else
+            gh release create "$tag" dist/release/* \
+              --title "MineKeeper $tag" --notes-file /tmp/notes.md
+          fi

@@ -8,6 +8,7 @@
 #   ./scripts/build-all.sh --linux          只构建 Linux
 #   ./scripts/build-all.sh --install-deps   缺依赖时自动安装
 #   ./scripts/build-all.sh --run            构建完启动 macOS 版
+#   ./scripts/build-all.sh --release        额外打包成可上传的压缩包（dist/release/）
 #   ./scripts/build-all.sh --clean          先清空 dist/
 #
 # 产物：
@@ -17,6 +18,7 @@
 #   dist/windows-x64/minekeeper-cli.exe
 #   dist/linux-x64/minekeeper        Linux 本机构建才有（交叉构建只出 CLI）
 #   dist/SHA256SUMS
+#   dist/release/MineKeeper-v<版本>-<平台>.{zip,tar.gz}   加 --release 才有
 #
 # 依赖（macOS 上）：
 #   - Rust stable，且已装目标：aarch64-apple-darwin、x86_64-apple-darwin、x86_64-pc-windows-gnu
@@ -34,6 +36,7 @@ DIST="$ROOT/dist"
 WANT_MACOS=0
 WANT_WINDOWS=0
 WANT_LINUX=0
+WANT_RELEASE=0
 INSTALL_DEPS=0
 CLEAN=0
 RUN_AFTER=0
@@ -45,7 +48,7 @@ VERSION="0.1.0"
 # ── 参数 ────────────────────────────────────────────────────────────────────
 
 usage() {
-    sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -53,6 +56,8 @@ while [ $# -gt 0 ]; do
         --macos)        WANT_MACOS=1 ;;
         --windows)      WANT_WINDOWS=1 ;;
         --linux)        WANT_LINUX=1 ;;
+        # 额外产出 dist/release/ 里可直接上传的压缩包（文件名带版本号）。
+        --release)      WANT_RELEASE=1 ;;
         --install-deps) INSTALL_DEPS=1 ;;
         --clean)        CLEAN=1 ;;
         --run)          RUN_AFTER=1; WANT_MACOS=1 ;;
@@ -75,8 +80,10 @@ warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()  { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 size_of() {
+    # macOS 用 stat -f%z，Linux 用 stat -c%s，Windows 的 Git Bash 两者都可能失败。
+    # 兜底到 0：这只影响末尾的摘要打印，不该让整个构建失败。
     if [ -f "$1" ]; then
-        stat -f%z "$1" 2>/dev/null || stat -c%s "$1"
+        stat -f%z "$1" 2>/dev/null || stat -c%s "$1" 2>/dev/null || echo 0
     else
         echo 0
     fi
@@ -87,6 +94,19 @@ human() {
 }
 
 has_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+# macOS 只有 shasum，Linux/Windows 只有 sha256sum。
+sha256() {
+    if has_cmd shasum; then shasum -a 256 "$@"; else sha256sum "$@"; fi
+}
+
+# GitHub 的 windows runner 在 bash 下 `uname -s` 是 MINGW64_NT-*。
+host_is_windows() {
+    case "$(uname -s)" in
+        MINGW*|MSYS*|CYGWIN*|Windows_NT) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 has_target() {
     rustup target list --installed 2>/dev/null | grep -qx "$1"
@@ -214,16 +234,23 @@ PLIST
 # ── Windows ─────────────────────────────────────────────────────────────────
 
 build_windows() {
-    say "Windows：x86_64-pc-windows-gnu"
-    ensure_target x86_64-pc-windows-gnu
+    local src out
+    if host_is_windows; then
+        # 在 Windows 上直接编原生目标 —— mingw 只有从别的系统交叉时才需要。
+        say "Windows：本机构建"
+        cargo build --release -p minekeeper -p minekeeper-cli
+        src="target/release"
+    else
+        say "Windows：x86_64-pc-windows-gnu（交叉）"
+        ensure_target x86_64-pc-windows-gnu
     # windows-sys 需要 dlltool 生成导入库，它来自 mingw-w64 的 binutils。
-    ensure_cmd x86_64-w64-mingw32-gcc   "brew install mingw-w64"
-    ensure_cmd x86_64-w64-mingw32-dlltool "brew install mingw-w64"
+        ensure_cmd x86_64-w64-mingw32-gcc   "brew install mingw-w64"
+        ensure_cmd x86_64-w64-mingw32-dlltool "brew install mingw-w64"
+        cargo build --release --target x86_64-pc-windows-gnu -p minekeeper -p minekeeper-cli
+        src="target/x86_64-pc-windows-gnu/release"
+    fi
 
-    cargo build --release --target x86_64-pc-windows-gnu -p minekeeper -p minekeeper-cli
-
-    local src="target/x86_64-pc-windows-gnu/release"
-    local out="$DIST/windows-x64"
+    out="$DIST/windows-x64"
     mkdir -p "$out"
     cp "$src/minekeeper.exe" "$out/"
     cp "$src/minekeeper-cli.exe" "$out/"
@@ -303,13 +330,54 @@ if [ "$WANT_MACOS" -eq 1 ]; then build_macos; fi
 if [ "$WANT_WINDOWS" -eq 1 ]; then build_windows; fi
 if [ "$WANT_LINUX" -eq 1 ]; then build_linux; fi
 
+# ── 发布打包 ────────────────────────────────────────────────────────────────
+#
+# 只打包本次实际构建出来的平台，文件名带版本号，可直接拖进 GitHub Release。
+# macOS 用 ditto 才能保住 .app 的结构、权限与 code signature。
+
+if [ "$WANT_RELEASE" -eq 1 ]; then
+    REL="$DIST/release"
+    say "打包发布资产"
+    mkdir -p "$REL"
+
+    if [ -d "$DIST/macos/$APP_NAME.app" ]; then
+        rm -f "$REL/MineKeeper-v$VERSION-macos-universal.zip"
+        ditto -c -k --sequesterRsrc "$DIST/macos" \
+            "$REL/MineKeeper-v$VERSION-macos-universal.zip"
+        ok "MineKeeper-v$VERSION-macos-universal.zip"
+    fi
+
+    if [ -d "$DIST/windows-x64" ]; then
+        rm -f "$REL/MineKeeper-v$VERSION-windows-x64.zip"
+        python3 - "$DIST/windows-x64" "$REL/MineKeeper-v$VERSION-windows-x64.zip" <<'ZIPPY'
+import os, sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as z:
+    for name in sorted(os.listdir(src)):
+        p = os.path.join(src, name)
+        if os.path.isfile(p):
+            z.write(p, name)
+ZIPPY
+        ok "MineKeeper-v$VERSION-windows-x64.zip"
+    fi
+
+    if [ -d "$DIST/linux-x64" ]; then
+        rm -f "$REL/MineKeeper-v$VERSION-linux-x64.tar.gz"
+        tar -czf "$REL/MineKeeper-v$VERSION-linux-x64.tar.gz" -C "$DIST/linux-x64" .
+        ok "MineKeeper-v$VERSION-linux-x64.tar.gz"
+    fi
+
+    ( cd "$REL" && sha256 * > SHA256SUMS )
+    ok "dist/release/SHA256SUMS"
+fi
+
 # ── 校验和与摘要 ────────────────────────────────────────────────────────────
 
 say "生成校验和"
 (
     cd "$DIST"
     find . -type f \( -name '*.exe' -o -name 'minekeeper-cli' -o -name 'minekeeper' \) \
-        | sort | xargs shasum -a 256 > SHA256SUMS
+        | sort | xargs sha256 > SHA256SUMS
 )
 ok "dist/SHA256SUMS"
 
