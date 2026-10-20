@@ -1,6 +1,6 @@
 # MineKeeper Rust 版设计文档
 
-> 版本：v1.0（可交付）
+> 版本：v0.1.0（可交付）
 > 日期：2026-10-20
 > 代码位置：本仓库根目录
 >
@@ -1779,8 +1779,8 @@ Windows 用 mingw 链接，比 Darwin 目标略大，1.52 MB 仍在 NFR-3 内。
 | `minekeeper-cli` | ✅ 可用（自检 / 出图 / 比对 / genlayout / glyphdiag / icon / ui / golden），含 2 项测试 |
 | 渲染基线 | ✅ 15 张已录制并校验通过 |
 | CI | ✅ 已配置（三平台矩阵 + 基线 + 体积守卫） |
-| git 仓库 | ✅ 已 init，5 个提交就绪 |
-| 远端推送 | ❌ 被 PAT 缺少 `workflow` scope 拦下，CI 因此**尚未运行过一次** |
+| git 仓库 | ✅ 已 init 并推送到 GitHub |
+| 持续集成 | ✅ 已跑通：run #7 六个 job 全绿（三平台编译 + 测试 + 自检 + 基线 + 冒烟 + 体积守卫） |
 
 **实测数据**（`aarch64-apple-darwin`，`rustc 1.99.1`）：
 
