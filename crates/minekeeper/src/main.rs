@@ -715,6 +715,26 @@ mod integration_tests {
         assert!(!app.clock_running, "确认自定义后旧表仍在跑");
     }
 
+    /// 打开自定义对话框但**不确认**时，旧对局仍在进行，计时继续。
+    ///
+    /// 这是刻意的，不是漏同步：如果开个对话框就能停表，玩家可以靠它暂停思考。
+    /// 只有**确认**之后棋盘被重置，才该停表（见 `custom_dialog_stops_the_clock`）。
+    #[test]
+    fn custom_dialog_open_keeps_the_clock_running() {
+        let (mut app, mut host) = harness();
+        start_playing(&mut app, &mut host);
+
+        app.command(&mut host, Command::Custom);
+
+        assert!(app.chrome.is_modal(), "应当弹出模态对话框");
+        assert!(app.clock_running, "开着对话框时旧对局仍应计时");
+        assert_eq!(
+            app.view.board().phase,
+            game::Phase::Playing,
+            "旧棋盘未被重置"
+        );
+    }
+
     /// 反过来：新棋盘上翻第一格，表必须重新开始走。
     #[test]
     fn first_click_restarts_the_clock() {
