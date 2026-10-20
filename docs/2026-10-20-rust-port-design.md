@@ -1695,6 +1695,11 @@ CLI 完全不碰窗口栈（对同一目标做依赖查询，winit/libloading �
 另外交叉链接必须显式指定 `-C linker=rust-lld` —— 默认会用宿主机的 `cc`，
 而 macOS 的 `ld` 不认识 `--as-needed`、`-Bstatic` 这些 ELF 参数。
 
+**Linux 的运行时依赖**（编译期依赖之外）：winit 的 X11 后端在**运行时** dlopen
+`libX11` / `libXcursor` / `libXrandr` / `libXi` / `libxkbcommon` / `libxkbcommon-x11`；
+cpal 运行时需要 `libasound2`。桌面发行版通常都有，但 `libxkbcommon-x11-0`
+在精简镜像里经常缺失 —— CI 的 ubuntu runner 就缺，缺了会在建窗时直接 panic。
+
 **GUI 冒烟测试**：`minekeeper --smoke-test` 会启动事件循环、等第一帧真正呈现
 （`Host::present` 在建窗失败时是静默返回的，所以还要确认 `has_window()`），
 打印 `SMOKE ok WxH` 后自动退出。退出码 0 才算通过。CI 在 Linux 上套 `xvfb-run`。

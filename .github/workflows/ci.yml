@@ -87,7 +87,10 @@ jobs:
           bin=./target/release/minekeeper
           if [ -f "$bin.exe" ]; then bin="$bin.exe"; fi
           if [ "$RUNNER_OS" = "Linux" ]; then
-            sudo apt-get install -y xvfb
+            # xvfb：虚拟 X 服务。
+            # libxkbcommon-x11-0：winit 的 X11 后端在运行时 dlopen 它，
+            #   runner 镜像默认没有 —— 缺了会在建窗时 panic 退出（134）。
+            sudo apt-get install -y xvfb libxkbcommon-x11-0
             xvfb-run -a "$bin" --smoke-test
           else
             "$bin" --smoke-test
