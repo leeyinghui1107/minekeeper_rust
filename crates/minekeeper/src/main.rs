@@ -79,6 +79,16 @@ struct App {
 
 impl App {
     fn new(size: Size, smoke: Option<Rc<Cell<bool>>>) -> App {
+        App::with_audio(size, smoke, mk_host::open_audio())
+    }
+
+    /// 带注入的构造。音频后端由调用方给 —— 测试传入静音实现，
+    /// 避免在 CI 上并行打开多个真实音频流。
+    fn with_audio(
+        size: Size,
+        smoke: Option<Rc<Cell<bool>>>,
+        player: Box<dyn mk_core::sound::Player>,
+    ) -> App {
         let mut view = View::new();
         view.apply_size(size);
 
@@ -93,7 +103,7 @@ impl App {
             chrome,
             fonts: FontStack::load_default(),
             text: TextRenderer::load_default(),
-            audio: Audio::new(mk_host::open_audio()),
+            audio: Audio::new(player),
             scores: Store::load_default(),
             pending: Rc::new(RefCell::new(Pending::default())),
             game_canvas: None,
@@ -654,7 +664,8 @@ mod integration_tests {
     /// 造一个没有窗口的宿主 —— `WinitHost` 在 `resumed` 之前不会建窗口，
     /// 而 `set_timer` / `kill_timer` 只动结构体字段，所以计时器逻辑可以脱离窗口测试。
     fn harness() -> (App, WinitHost) {
-        let app = App::new(Size::Medium, None);
+        // 不碰真实音频设备：Windows CI 上并行开多个 WASAPI 流会让测试进程访问违例。
+        let app = App::with_audio(Size::Medium, None, Box::new(mk_core::sound::SilentPlayer));
         let host = WinitHost::new(WindowSpec {
             width: 747,
             height: 688,
