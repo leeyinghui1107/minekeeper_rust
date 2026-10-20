@@ -24,7 +24,7 @@ pub fn app_icon(size: i32) -> Option<Canvas> {
     Some(c)
 }
 
-/// 与 Go 版 `createAppIcon` 一致的默认图标尺寸。
+/// 默认图标尺寸。
 pub const DEFAULT_ICON_SIZE: i32 = 32;
 
 #[cfg(test)]

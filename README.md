@@ -6,22 +6,23 @@ Windows XP `winmine.exe` 的行为复刻，用 Rust 从零实现，**三平台�
 > 15 张渲染基线已录制并逐像素校验。设计文档见
 > [`docs/2026-10-20-rust-port-design.md`](docs/2026-10-20-rust-port-design.md)。
 
-## 与 Go 版的关系
+## 技术栈
 
-| | Go 版（`../go`，**已废弃**） | Rust 版（本目录，唯一维护） |
-|---|---|---|
-| 平台 | 仅 Windows x64 | Windows / macOS / Linux |
-| 渲染 | GDI+（Windows）/ 自研（其他） | `tiny-skia`，三平台同一份 |
-| 字形 | GDI hinting 墨迹 | `fontdue` 轮廓 + 阈值量化，**字体内嵌** |
-| 基线 | 按后端分组 | **一套，三平台精确比对** |
-| 依赖 | 零第三方 | 约 150 个 crate（见设计文档 §4） |
+| 层 | 方案 |
+|---|---|
+| 平台 | Windows / macOS / Linux，单一可执行文件 |
+| 渲染 | `tiny-skia`，三平台同一份，**一套基线精确比对** |
+| 字形 | `ab_glyph`（界面文本）+ `fontdue`（格内数字，**字体内嵌**） |
+| 窗口 / 音频 | `winit` + `softbuffer` / `cpal` |
+| 依赖 | 约 150 个 crate（见设计文档 §4） |
 
-场景脚本格式与 Go 版**完全一致**，`../go/testdata/scenes/*.txt` 可以直接复用。
+场景脚本是纯文本格式（`board` / `size` / `mines` / `open` …），`testdata/scenes/`
+里有 20 份可直接运行。
 
 ## 快速开始
 
 ```sh
-cargo test --workspace                 # 74 项单元测试
+cargo test --workspace                 # 96 项单元测试
 cargo run -p minekeeper-cli --release -- --selftest 2000   # 22 项无窗口自检
 cargo run -p minekeeper-cli --release -- --golden          # 15 张渲染基线逐像素校验
 cargo run -p minekeeper-cli --release -- --script testdata/scenes/expert-fresh.txt /tmp/a.png
@@ -102,9 +103,9 @@ crates/
   minekeeper-cli/   无窗口二进制：自检 / 出图 / 比对 / 雷位生成 / 图标 / 界面预览
 scripts/            build-all.sh（macOS 通用包 + Windows exe）
 testdata/
-  scenes/           场景脚本（20 份，与 Go 版同格式，直接复用）
+  scenes/           场景脚本（20 份，纯文本，见设计文档 §3.1 FR-9）
   golden/           渲染基线（15 张，--golden 逐像素校验）
 ```
 
-依赖严格单向，规则见 [`../go/CONTRIBUTING.md`](../go/CONTRIBUTING.md) 的同一套：
-**逻辑层不许 import 任何绘图或平台相关的东西**。
+依赖严格单向：**逻辑层不许 import 任何绘图或平台相关的东西**。
+新增功能时先想清楚落在哪一层 —— `game` 里出现 `raster` 就是分层破了。

@@ -83,8 +83,8 @@ impl WinitHost {
 
     /// 把窗口尺寸调到目标客户区大小。
     ///
-    /// 注意这里与 Go 版 `fitClient()` 的做法不同：Go 版靠「先猜一个外框、再迭代修正
-    /// 非客户区差值」，那是 Win32 的记账方式；`winit` 直接接受客户区尺寸。
+    /// `winit` 直接接受**客户区**尺寸，不需要像 Win32 那样「先猜一个外框、
+    /// 再迭代修正非客户区差值」。
     pub fn fit_client(&mut self, w: i32, h: i32) {
         if let Some(win) = &self.window {
             // LogicalSize 是**逻辑**单位，winit 会按 scale_factor 自己换算成物理像素，

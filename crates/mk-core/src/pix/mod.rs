@@ -1,7 +1,6 @@
 //! 绘制图元层。全部是整数坐标的矩形 / 多边形 / 椭圆 / 折线，
 //! 坐标一律经 [`crate::theme::Metrics`] 取整后落到设备像素。
 //!
-//! 对应 Go 版 `internal/pix/` 的 `bevels.go` / `sprites.go` / `led.go` / `digits.go`。
 //! 这一层的代码**与平台无关**：它只调 [`crate::raster::Canvas`] 的方法，
 //! 因此换光栅器不用改这里一行。
 

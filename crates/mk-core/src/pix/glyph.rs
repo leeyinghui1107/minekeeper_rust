@@ -1,9 +1,9 @@
 //! 格内数字 1..8 与问号的字形适配。
 //!
-//! # 与 Go 版的关键差异
+//! # 为什么不用系统文本光栅
 //!
-//! Go 版用 GDI 硬边光栅（`CreateFontW` + `NONANTIALIASED_QUALITY` + `ExtTextOutW`）取墨迹，
-//! 那是 Windows 专有且带 hinting 的结果，**在其他平台无法复现**。
+//! Win32 的 GDI 硬边光栅（`CreateFontW` + `ExtTextOutW`）取到的墨迹带 hinting，
+//! 那是 Windows 专有的结果，**在其他平台无法复现**。
 //! 这里改用 `fontdue` 从系统字体轮廓栅格化出覆盖度位图，再按阈值二值化 ——
 //! 三平台同一份代码，结果逐像素一致。
 //!

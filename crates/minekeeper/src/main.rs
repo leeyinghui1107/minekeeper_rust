@@ -736,7 +736,7 @@ mod integration_tests {
     }
 
     /// 英雄榜打开期间同样不暂停 —— 规则是「任何对话框都不暂停」，
-    /// 不为某个对话框单独开口子（已废弃的 Go 版曾让英雄榜停表，这里不沿用）。
+    /// 不为某个对话框单独开口子。
     #[test]
     fn scores_dialog_open_keeps_the_clock_running() {
         let (mut app, mut host) = harness();

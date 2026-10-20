@@ -222,7 +222,7 @@ fn render_script(input: &Path, output: &Path) -> Result<(i32, i32), String> {
 /// 基线目录里不产基线的场景前缀。
 ///
 /// `layout-*` 只是 `--genlayout` 产出的雷位输入，`bevel-*` 是调试凸起格斜接用的
-/// 8×8 小图 —— 两者都不该有基线，与 Go 版的划分一致。
+/// 8×8 小图 —— 两者都不该有基线。
 const NO_GOLDEN_PREFIXES: [&str; 2] = ["layout-", "bevel-"];
 
 /// 逐场景渲染并与基线比对；`update` 为真时改写基线。
