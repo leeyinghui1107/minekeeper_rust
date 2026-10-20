@@ -234,6 +234,65 @@ pub enum DialogResult {
     Dismissed,
 }
 
+// ── 帮助与关于文案 ──────────────────────────────────────────────────────────
+//
+// 放在 mk-core 而不是二进制里：GUI 与 `--ui` 离屏预览必须用同一份文本，
+// 否则两边会悄悄走偏（早期 `--ui help` 用的就是一段缩短的副本）。
+
+/// 「帮助 → 目录」/ F1：完整帮助。
+pub const HELP_CONTENTS: &str = "\
+目标
+在不触雷的情况下翻开所有非雷格子。翻开所有非雷格即获胜，点中雷即失败。
+
+操作
+· 左键翻开格子；第一次点击永远不会踩雷。
+· 右键在「旗子 → 问号 → 空」之间循环。
+· 数字表示周围 8 格里有几颗雷。
+
+快速展开
+· 把鼠标停在一个已翻开的数字上，同时按下左右键，或按下中键。
+· 规则一：周围未翻开的格数等于该数字时，把这些格全部标雷（永远安全）。
+· 规则二：周围已标旗的格数等于该数字时，翻开其余相邻格。
+  旗子插错时规则二会踩雷 —— 这是原版的设定。
+
+快捷键
+· F1 打开帮助，F2 开新局。
+· 方向键移动焦点框，Enter 或空格翻开，F 插旗。
+
+扩展
+· 「游戏 → 单击快速展开」打开后，左键单独点一个数字也能快速展开。
+  这是本项目新增的，原版没有；关闭时与原版逐位一致。";
+
+/// 「帮助 → 查找帮助主题」。
+pub const HELP_SEARCH: &str = "\
+本帮助是固定的主题集，没有可搜索的关键字索引。
+
+可用的主题：
+· 玩法与胜负判定
+· 快速展开的两条规则
+· 键盘快捷键
+· 单击快速展开（本项目的扩展）
+
+请改用「帮助 → 目录」，或直接按 F1 查看完整帮助。";
+
+/// 「帮助 → 使用帮助」。
+pub const HELP_USING: &str = "\
+· 按 F1，或从「帮助」菜单里选择，即可打开帮助。
+· 帮助对话框打开期间，游戏不接收鼠标与键盘。
+· 按 Enter 或点「确定」关闭；按 Esc 也可以。
+· 「目录」是完整帮助；「查找帮助主题」列出可用主题。
+· 文本较长会自动折行，窗口缩小时对话框跟着缩窄。";
+
+/// 「帮助 → 关于扫雷」。
+pub const ABOUT_TEXT: &str = "\
+扫雷（Rust 版）
+行为规格复刻自 Windows XP 的 winmine.exe，
+方格可在小/中/大三档间切换（16/24/32 像素）。
+本程序不含任何微软原版代码或素材，
+图形与音效均为代码现画/现合成。
+
+原版作者：Robert Donner 与 Curt Johnson（本处仅为署名致敬）";
+
 // ── 配色（XP 菜单观感）──────────────────────────────────────────────────────
 
 const MENU_BG: Rgb = Rgb(0xF5, 0xF4, 0xEC);
@@ -386,6 +445,13 @@ struct Dropdown {
 
 // ── Chrome ──────────────────────────────────────────────────────────────────
 
+/// 对话框的实际几何与折行结果。绘制与命中测试共用同一份，保证两者永远一致。
+struct DialogLayout {
+    frame: Rect,
+    /// 折行后的正文（只有 Message / Name 使用）。
+    lines: Vec<String>,
+}
+
 /// 菜单栏 + 对话框的唯一状态机。
 pub struct Chrome {
     items: Vec<MenuItem>,
@@ -441,7 +507,7 @@ impl Chrome {
             kind: DialogKind::Message {
                 body: body.to_string(),
             },
-            w: 360,
+            w: 460,
             h,
             pressed: None,
         });
@@ -583,11 +649,68 @@ impl Chrome {
         Some(Dropdown { rect, entries })
     }
 
-    fn dialog_frame(&self, width: i32, height: i32) -> Option<Rect> {
+    /// 对话框的实际几何。
+    ///
+    /// 尺寸**由折行后的内容决定**，并夹在窗口可用区域之内 —— 早期版本用固定的
+    /// `w: 360` 且正文不折行，长句子会直接冲出对话框右边界。
+    fn dialog_layout(
+        &self,
+        win_w: i32,
+        win_h: i32,
+        text: &mut TextRenderer,
+    ) -> Option<DialogLayout> {
         let d = self.dialog.as_ref()?;
-        let x = (width - d.w) / 2;
-        let y = (Self::BAR_HEIGHT + (height - Self::BAR_HEIGHT - d.h) / 2).max(Self::BAR_HEIGHT);
-        Some(Rect::new(x, y, d.w, d.h))
+
+        // 可用区域：左右各留 12，别压住菜单栏。
+        let avail_w = (win_w - 24).max(180);
+        let avail_h = (win_h - Self::BAR_HEIGHT - 16).max(100);
+
+        let w = d.w.min(avail_w);
+        // 左右各 16 的内边距，再留 16 给折行的「行首禁则」溢出（收尾标点不甩到下一行）。
+        let inner_w = (w - 48).max(40);
+
+        // 只有 Message / Name 有可变长正文，其余是固定布局。
+        let lines = match &d.kind {
+            DialogKind::Message { body } => text.wrap(body, inner_w, self.font_px),
+            DialogKind::Name { prompt, .. } => text.wrap(prompt, inner_w, self.font_px),
+            _ => Vec::new(),
+        };
+
+        const TITLE_H: i32 = 20;
+        const LINE_H: i32 = 18;
+        const BTN_H: i32 = 24;
+        const FIELD_H: i32 = 22;
+        const PAD: i32 = 12;
+
+        // 窗口太小放不下时截断，并在末尾标一个省略号 —— 宁可少显示几行，
+        // 也不能让文字画出对话框之外。
+        const CHROME_FIXED: i32 = 4 + TITLE_H + 6 + 8 + BTN_H + PAD;
+        let max_lines = ((avail_h - CHROME_FIXED) / LINE_H).max(1) as usize;
+        let mut lines = lines;
+        if lines.len() > max_lines {
+            lines.truncate(max_lines);
+            if let Some(last) = lines.last_mut() {
+                last.push('…');
+            }
+        }
+
+        let content = lines.len().max(1) as i32 * LINE_H;
+        let h = match &d.kind {
+            // 上边距 4 + 标题 20 + 间隔 6 + 正文 + 间隔 8 + 按钮 24 + 下边距 12
+            DialogKind::Message { .. } => 4 + TITLE_H + 6 + content + 8 + BTN_H + PAD,
+            // 正文 + 间隔 8 + 输入框 22 + 间隔 8 + 按钮 24 + 下边距 12
+            DialogKind::Name { .. } => 4 + TITLE_H + 6 + content + 8 + FIELD_H + 8 + BTN_H + PAD,
+            // 自定义雷区 / 英雄榜：固定布局
+            _ => d.h,
+        };
+        let h = h.min(avail_h).max(80);
+
+        let x = (win_w - w) / 2;
+        let y = (Self::BAR_HEIGHT + (win_h - Self::BAR_HEIGHT - h) / 2).max(Self::BAR_HEIGHT);
+        Some(DialogLayout {
+            frame: Rect::new(x, y, w, h),
+            lines,
+        })
     }
 
     // ── 输入 ────────────────────────────────────────────────────────────────
@@ -696,16 +819,15 @@ impl Chrome {
         height: i32,
         text: &mut TextRenderer,
     ) -> ChromeOutcome {
-        let Some(frame) = self.dialog_frame(width, height) else {
+        // 先把几何算完（要 &mut TextRenderer 来量文本），再可变借用 dialog。
+        let Some(layout) = self.dialog_layout(width, height, text) else {
             return ChromeOutcome::Ignored;
         };
+        let frame = layout.frame;
         let buttons = match self.dialog.as_ref() {
             Some(d) => d.buttons(frame),
             None => return ChromeOutcome::Ignored,
         };
-
-        // 先把需要 &mut TextRenderer 的东西算完，再可变借用 dialog。
-        let _ = text;
 
         match ev {
             ChromeEvent::Escape => {
@@ -892,10 +1014,9 @@ impl Chrome {
         }
         // 对话框要最后画（盖在菜单之上）。
         if self.dialog.is_some() {
-            let frame = self.dialog_frame(width, dst.height());
-            if let Some(frame) = frame {
+            if let Some(layout) = self.dialog_layout(width, dst.height(), text) {
                 let d = self.dialog.take().expect("刚判断过存在");
-                self.paint_dialog(dst, &d, frame, text);
+                self.paint_dialog(dst, &d, &layout, text);
                 self.dialog = Some(d);
             }
         }
@@ -968,7 +1089,14 @@ impl Chrome {
         }
     }
 
-    fn paint_dialog(&self, dst: &mut Canvas, d: &Dialog, frame: Rect, text: &mut TextRenderer) {
+    fn paint_dialog(
+        &self,
+        dst: &mut Canvas,
+        d: &Dialog,
+        layout: &DialogLayout,
+        text: &mut TextRenderer,
+    ) {
+        let frame = layout.frame;
         // 投影：对话框常压在浅色棋盘上，没有投影边界会糊在一起。
         dst.fill_rect(
             Rect::new(frame.x + 3, frame.y + 3, frame.w, frame.h),
@@ -991,19 +1119,25 @@ impl Chrome {
         text.draw_in(dst, title_r, &d.title, self.font_px, MENU_SEL_FG, 6);
 
         let body = Rect::new(frame.x, title_r.bottom() + 6, frame.w, frame.h - 36);
-        match &d.kind {
-            DialogKind::Message { body: b } => {
-                for (i, line) in b.lines().enumerate() {
-                    let ly = body.y + i as i32 * 18;
-                    text.draw(dst, body.x + 16, ly + 13, line, self.font_px, theme::INK);
+        // 正文左内边距：16，行高 18，基线在行内偏下 13。
+        let draw_lines = |dst: &mut Canvas, text: &mut TextRenderer, lines: &[String]| {
+            for (i, line) in lines.iter().enumerate() {
+                if line.is_empty() {
+                    continue;
                 }
+                let ly = body.y + i as i32 * 18;
+                text.draw(dst, body.x + 16, ly + 13, line, self.font_px, theme::INK);
             }
-            DialogKind::Name { prompt, field } => {
-                for (i, line) in prompt.lines().enumerate() {
-                    let ly = body.y + i as i32 * 17;
-                    text.draw(dst, body.x + 14, ly + 12, line, self.font_px, theme::INK);
-                }
-                let fr = Rect::new(body.x + 14, body.y + 40, body.w - 28, 22);
+        };
+        match &d.kind {
+            DialogKind::Message { .. } => {
+                draw_lines(dst, text, &layout.lines);
+            }
+            DialogKind::Name { field, .. } => {
+                draw_lines(dst, text, &layout.lines);
+                // 输入框紧跟在折行后的正文下面。
+                let fy = body.y + layout.lines.len().max(1) as i32 * 18 + 8;
+                let fr = Rect::new(body.x + 16, fy, body.w - 32, 22);
                 self.paint_field(dst, fr, field, true, text);
             }
             DialogKind::Custom {
@@ -1244,7 +1378,7 @@ mod tests {
     fn message_dialog_ok_closes_it() {
         let (mut c, mut t) = chrome();
         c.open_message("关于扫雷", "MineKeeper");
-        let frame = c.dialog_frame(800, 700).unwrap();
+        let frame = c.dialog_layout(800, 700, &mut t).unwrap().frame;
         let (ok, _) = c.dialog.as_ref().unwrap().buttons(frame)[0];
         c.handle(ChromeEvent::Click(ok.x + 5, ok.y + 5), 800, 700, &mut t);
         c.handle(ChromeEvent::Release(ok.x + 5, ok.y + 5), 800, 700, &mut t);
@@ -1344,6 +1478,46 @@ mod tests {
             // 标题条是蓝色，用它证明对话框真的画上去了。
             let (_, _, w, h) = cv.ink_bounds();
             assert!(w > 100 && h > 100, "画面几乎空白");
+        }
+    }
+
+    /// 三条帮助必须各有内容 —— 早期版本把它们都指向同一段文本。
+    #[test]
+    fn help_topics_are_distinct() {
+        let a = super::HELP_CONTENTS;
+        let b = super::HELP_SEARCH;
+        let c = super::HELP_USING;
+        assert_ne!(a, b, "目录与查找主题内容相同");
+        assert_ne!(a, c, "目录与使用帮助内容相同");
+        assert_ne!(b, c, "查找主题与使用帮助内容相同");
+        for (name, t) in [("目录", a), ("查找主题", b), ("使用帮助", c)] {
+            assert!(!t.trim().is_empty(), "{name} 是空的");
+        }
+    }
+
+    /// 对话框无论正文多长、窗口多小，都不得画到窗口之外。
+    #[test]
+    fn dialog_layout_always_fits_inside_the_window() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let mut c = Chrome::new(menu_items());
+        c.open_message("标题", &"很长的正文。".repeat(200));
+        for (w, h) in [(747, 688), (273, 316), (320, 240), (200, 140)] {
+            let l = c.dialog_layout(w, h, &mut t).expect("应有布局");
+            assert!(l.frame.x >= 0, "{w}x{h} 左边越界");
+            assert!(
+                l.frame.right() <= w,
+                "{w}x{h} 右边越界（{} > {w}）",
+                l.frame.right()
+            );
+            assert!(l.frame.y >= Chrome::BAR_HEIGHT, "{w}x{h} 压住菜单栏");
+            assert!(
+                l.frame.bottom() <= h,
+                "{w}x{h} 下边越界（{} > {h}）",
+                l.frame.bottom()
+            );
         }
     }
 

@@ -272,12 +272,20 @@ impl App {
             }
             Command::Scores => self.show_scores(),
             Command::Exit => host.quit(),
-            Command::HelpContents | Command::HelpSearch | Command::HelpUsing => {
-                self.chrome.open_message("扫雷帮助", HELP_TEXT);
-            }
-            Command::HelpAbout => {
-                self.chrome.open_message("关于扫雷", ABOUT_TEXT);
-            }
+            // 三项目录**必须各有内容** —— 早期版本把它们都指向同一段文本，
+            // 用户点哪个都是同一屏字。
+            Command::HelpContents => self
+                .chrome
+                .open_message("扫雷帮助 · 目录", mk_core::chrome::HELP_CONTENTS),
+            Command::HelpSearch => self
+                .chrome
+                .open_message("扫雷帮助 · 查找主题", mk_core::chrome::HELP_SEARCH),
+            Command::HelpUsing => self
+                .chrome
+                .open_message("扫雷帮助 · 使用帮助", mk_core::chrome::HELP_USING),
+            Command::HelpAbout => self
+                .chrome
+                .open_message("关于扫雷", mk_core::chrome::ABOUT_TEXT),
         }
         let opts = self.menu_options();
         self.chrome.sync(opts);
@@ -452,7 +460,8 @@ impl AppHandler for App {
             InputEvent::MouseLeave => self.view.mouse_leave(),
             InputEvent::KeyDown(mk_core::Key::F2) => self.new_game(),
             InputEvent::KeyDown(mk_core::Key::F1) => {
-                self.chrome.open_message("扫雷帮助", HELP_TEXT);
+                self.chrome
+                    .open_message("扫雷帮助 · 目录", mk_core::chrome::HELP_CONTENTS);
             }
             InputEvent::KeyDown(k) => self.view.key_down(k),
             InputEvent::Focus(false) => self.stop_clock(host),
@@ -511,29 +520,6 @@ fn size_index(s: Size) -> usize {
         Size::Large => 2,
     }
 }
-
-const HELP_TEXT: &str = "\
-目标：在不触雷的情况下翻开所有非雷格子。
-· 左键翻开格子；第一次点击永远不会踩雷。
-· 右键在「旗子 → 问号 → 空」之间循环。
-· 数字表示周围 8 格里有几颗雷。
-· 快速展开：把鼠标停在一个数字上，同时按下左右键，或按下中键；
-  当它周围的旗子数正好等于该数字时，其余相邻格会被一次翻开。
-· 按住手势还有两条自动判定：未翻开邻格数等于数字时把它们全部标雷；
-  已标雷数等于数字时翻开其余邻格。
-· 翻开所有非雷格即获胜；点中雷即失败。
-· F2 开局，方向键移动焦点框，Enter/空格翻开，F 插旗。
-· 「游戏 → 单击快速展开」打开后，左键单独点一个数字也能快速展开
-  （本项目扩展，原版没有；关闭时与原版一致）。";
-
-const ABOUT_TEXT: &str = "\
-扫雷（Rust 版）
-行为规格复刻自 Windows XP 的 winmine.exe，
-方格可在小/中/大三档间切换（16/24/32 像素）。
-本程序不含任何微软原版代码或素材，
-图形与音效均为代码现画/现合成。
-
-原版作者：Robert Donner 与 Curt Johnson（本处仅为署名致敬）";
 
 fn main() {
     let mut size = Size::Medium;

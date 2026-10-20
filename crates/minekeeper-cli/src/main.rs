@@ -102,7 +102,7 @@ fn main() -> ExitCode {
         }
         "--ui" => {
             if args.len() < 2 {
-                eprintln!("用法：--ui <输出png> [menu|help|about|name|custom|scores]");
+                eprintln!("用法：--ui <输出png> [menu|help|search|using|about|name|custom|scores]");
                 return ExitCode::from(2);
             }
             let what = args.get(2).map(|s| s.as_str()).unwrap_or("menu");
@@ -329,8 +329,11 @@ fn render_ui(output: &Path, what: &str) -> Result<(), String> {
             chrome.handle(ChromeEvent::Click(10, 8), ww, wh, &mut text);
             chrome.handle(ChromeEvent::Move(40, 60), ww, wh, &mut text);
         }
-        "help" => chrome.open_message("扫雷帮助", "目标：在不触雷的情况下翻开所有非雷格子。\n· 左键翻开格子；第一次点击永远不会踩雷。\n· 右键在「旗子 → 问号 → 空」之间循环。\n· 数字表示周围 8 格里有几颗雷。"),
-        "about" => chrome.open_message("关于扫雷", "扫雷（Rust 版）\n行为规格复刻自 Windows XP 的 winmine.exe，\n方格可在小/中/大三档间切换（16/24/32 像素）。\n本程序不含任何微软原版代码或素材。"),
+        // 与 GUI 共用同一份文案 —— 早期这里是一段缩短的副本，两边会走偏。
+        "help" => chrome.open_message("扫雷帮助 · 目录", mk_core::chrome::HELP_CONTENTS),
+        "search" => chrome.open_message("扫雷帮助 · 查找主题", mk_core::chrome::HELP_SEARCH),
+        "using" => chrome.open_message("扫雷帮助 · 使用帮助", mk_core::chrome::HELP_USING),
+        "about" => chrome.open_message("关于扫雷", mk_core::chrome::ABOUT_TEXT),
         "name" => chrome.open_name("已破高级记录。\n请留尊姓大名。", "匿名"),
         "custom" => chrome.open_custom(24, 30, 199),
         "scores" => chrome.open_scores([
@@ -384,7 +387,7 @@ fn usage() {
          \x20 --genlayout <输出> [rows cols mines seed]   生成固定雷位脚本头\n\
          \x20 --golden [--update] [场景目录] [基线目录]   逐像素校验渲染基线\n\
          \x20 --icon <输出png> [size]                     画出应用图标（默认 32）\n\
-         \x20 --ui <输出png> [menu|help|about|name|custom|scores]  离屏渲染界面\n\
+         \x20 --ui <输出png> [menu|help|search|using|about|name|custom|scores]  离屏渲染界面\n\
          \x20 --glyphdiag                                 打印字形适配结果"
     );
 }

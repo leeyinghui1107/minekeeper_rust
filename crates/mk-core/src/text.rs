@@ -252,6 +252,107 @@ impl TextRenderer {
         x + pen.round() as i32
     }
 
+    /// 单个字符的前进宽度。折行用，不产生布局。
+    fn char_advance(&mut self, ch: char, px: f32) -> i32 {
+        if ch == '&' {
+            return 0;
+        }
+        match self.glyph(ch, px) {
+            Some(g) => g.advance.round() as i32,
+            None => (px * 0.5) as i32,
+        }
+    }
+
+    /// 按像素宽度折行，保留原文里的换行符。
+    ///
+    /// 三条规则，缺一条都会出现难看的断法：
+    ///
+    /// 1. **中日韩允许在任意字符间断行**，拉丁文本优先在空格处断。
+    /// 2. **空格断点不能离行尾太远** —— 否则 `· 规则一：…` 这种「整行只有开头一个空格」
+    ///    的句子会被断成孤零零的 `·` 一行（这是最初的 bug）。
+    /// 3. **行首禁则**：收尾标点（`。）」` 等）不得出现在行首；
+    ///    开括号（`（「` 等）不得留在行尾。
+    pub fn wrap(&mut self, text: &str, max_width: i32, px: f32) -> Vec<String> {
+        let max_width = max_width.max(16);
+        let mut out: Vec<String> = Vec::new();
+
+        for raw in text.lines() {
+            if raw.trim().is_empty() {
+                out.push(String::new());
+                continue;
+            }
+            let mut cur = String::new();
+            let mut cur_w = 0i32;
+            // `cur` 里最近一次可以在空格后断行的位置，以及那一刻的行宽。
+            let mut last_break = 0usize;
+            let mut last_break_w = 0i32;
+
+            for ch in raw.chars() {
+                let w = self.char_advance(ch, px);
+                // **下一个字符是收尾标点时不允许在这里断行** —— 否则它会落到行首。
+                // 宁可这一行略微超宽，也不让「）。」孤零零起一行。
+                if cur_w + w > max_width && !cur.is_empty() && !is_no_line_start(ch) {
+                    // 空格断点只有在「切完之后这一行仍然够长」时才采用，
+                    // 否则按字符硬断（CJK 本来就允许）。
+                    let mut cut = if last_break > 0
+                        && last_break <= cur.len()
+                        && last_break_w * 10 >= max_width * 6
+                    {
+                        last_break
+                    } else {
+                        cur.len()
+                    };
+
+                    // 行首禁则：收尾标点跟着上一行走。
+                    while cut < cur.len() {
+                        let c = cur[cut..].chars().next().expect("cut 在界内");
+                        if is_no_line_start(c) {
+                            cut += c.len_utf8();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 行尾禁则：开括号挪到下一行。
+                    while cut > 0 {
+                        let c = cur[..cut].chars().next_back().expect("cut > 0");
+                        if is_no_line_end(c) {
+                            cut -= c.len_utf8();
+                        } else {
+                            break;
+                        }
+                    }
+                    if cut == 0 || cut >= cur.len() {
+                        cut = cur.len();
+                    }
+
+                    out.push(cur[..cut].trim_end().to_string());
+                    let tail = cur[cut..].trim_start().to_string();
+                    cur_w = if tail.is_empty() {
+                        0
+                    } else {
+                        self.measure(&tail, px).width
+                    };
+                    cur = tail;
+                    last_break = 0;
+                    last_break_w = 0;
+                }
+                cur.push(ch);
+                cur_w += w;
+                if ch == ' ' {
+                    last_break = cur.len();
+                    last_break_w = cur_w;
+                }
+            }
+            if !cur.is_empty() {
+                out.push(cur);
+            }
+        }
+        if out.is_empty() {
+            out.push(String::new());
+        }
+        out
+    }
+
     /// 在矩形内左侧留 `left_pad` 后**垂直居中**画一行。返回实际文本宽度。
     pub fn draw_in(
         &mut self,
@@ -289,6 +390,43 @@ impl TextRenderer {
             .filter(|&c| c != '&' && self.face_for(c).is_none())
             .collect()
     }
+}
+
+/// 不能出现在**行首**的收尾标点。
+///
+/// 注意 `·` **不在**表里 —— 在这个项目里它是项目符号，行首出现是正常的。
+fn is_no_line_start(ch: char) -> bool {
+    matches!(
+        ch,
+        '）' | ')'
+            | '」'
+            | '』'
+            | '】'
+            | '》'
+            | '〉'
+            | '、'
+            | '。'
+            | '，'
+            | ','
+            | '.'
+            | '：'
+            | ':'
+            | '；'
+            | ';'
+            | '？'
+            | '?'
+            | '！'
+            | '!'
+            | '…'
+            | '—'
+            | '～'
+            | '%'
+    )
+}
+
+/// 不能留在**行尾**的开括号。
+fn is_no_line_end(ch: char) -> bool {
+    matches!(ch, '（' | '(' | '「' | '『' | '【' | '《' | '〈')
 }
 
 #[cfg(test)]
@@ -427,6 +565,115 @@ mod tests {
         assert!(w > 0);
         let (_, _, iw, ih) = cv.ink_bounds();
         assert!(iw > 8 && ih > 4, "文本几乎没画上去：{iw}x{ih}");
+    }
+
+    /// 折行后每一行的宽度都不得超过上限 —— 这是对话框不溢出的前提。
+    #[test]
+    fn wrap_keeps_every_line_within_the_limit() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let src = "· 快速展开：把鼠标停在一个数字上，同时按下左右键，或按下中键；当它周围的旗子数正好等于该数字时，其余相邻格会被一次翻开。";
+        for limit in [120, 200, 300, 380] {
+            let lines = t.wrap(src, limit, 13.0);
+            assert!(lines.len() > 1, "limit={limit} 应当折成多行");
+            for l in &lines {
+                let w = t.measure(l, 13.0).width;
+                // 行首禁则会刻意让收尾标点留在上一行，允许最多一个字的溢出。
+                assert!(
+                    w <= limit + 16,
+                    "limit={limit} 时「{l}」宽 {w}，超出容忍范围"
+                );
+            }
+        }
+    }
+
+    /// 折行不得丢字：拼回去应当与原文一致（忽略被吃掉的空白）。
+    #[test]
+    fn wrap_loses_no_text() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let src = "左键翻开格子；第一次点击永远不会踩雷。Right click cycles marks.";
+        let joined: String = t
+            .wrap(src, 140, 13.0)
+            .join("")
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let want: String = src.chars().filter(|c| !c.is_whitespace()).collect();
+        assert_eq!(joined, want, "折行丢了字");
+    }
+
+    /// 整行只有一个空格时，不能断在那个空格上（曾经的 `·` 孤儿行 bug）。
+    #[test]
+    fn wrap_does_not_orphan_a_bullet() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let src = "· 规则一：周围未翻开的格数等于该数字时，把这些格全部标雷（永远安全）。";
+        let lines = t.wrap(src, 428, 13.0);
+        assert!(lines.len() > 1, "这段应当折行");
+        for l in &lines {
+            assert!(l != "·", "出现孤立的项目符号行：{lines:?}");
+        }
+        assert!(
+            lines[0].contains("规则一"),
+            "首行应当带上正文：{:?}",
+            lines[0]
+        );
+    }
+
+    /// 行首禁则：收尾标点不得出现在行首。
+    #[test]
+    fn wrap_never_starts_a_line_with_closing_punctuation() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let src = "· 规则一：周围未翻开的格数等于该数字时，把这些格全部标雷（永远安全）。";
+        for limit in 200..440 {
+            for l in t.wrap(src, limit, 13.0) {
+                if let Some(c) = l.chars().next() {
+                    assert!(
+                        !is_no_line_start(c),
+                        "limit={limit} 时行首是收尾标点 {c:?}：{l:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// 显式换行必须保留。
+    #[test]
+    fn wrap_preserves_explicit_newlines() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let lines = t.wrap("第一行\n第二行", 400, 13.0);
+        assert_eq!(lines, vec!["第一行", "第二行"]);
+    }
+
+    /// 拉丁文本优先在空格处断，不把单词劈开。
+    #[test]
+    fn wrap_breaks_at_spaces_for_latin() {
+        let mut t = TextRenderer::load_default();
+        if t.is_empty() {
+            return;
+        }
+        let lines = t.wrap("alpha beta gamma delta", 90, 13.0);
+        for l in &lines {
+            assert!(!l.starts_with(' '), "行首不该有空格：{l:?}");
+            assert!(!l.trim().is_empty());
+        }
+        // 至少有一个断点落在词边界上
+        assert!(lines
+            .iter()
+            .any(|l| l.ends_with("alpha") || l.ends_with("beta") || l.ends_with("gamma")));
     }
 
     /// 居中绘制时，墨迹左右留白应当大致相等。
