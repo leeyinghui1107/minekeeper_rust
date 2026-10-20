@@ -37,8 +37,9 @@ mod tests {
             let c = app_icon(size).expect("应能建画布");
             assert_eq!(c.width(), size);
             assert_eq!(c.height(), size);
-            // 必须真的画了东西：墨迹包围盒应该覆盖相当大一块。
-            let (_, _, w, h) = c.ink_bounds();
+            // 必须真的画了东西。按底色判定 —— fill_face 铺满后画布不透明，
+            // ink_bounds（按 alpha）恒为整块画布，那样断言是恒真的。
+            let (_, _, w, h) = c.ink_bounds_on(crate::theme::FACE);
             assert!(w > size / 2 && h > size / 2, "{size}: 图标几乎空白 {w}x{h}");
         }
     }

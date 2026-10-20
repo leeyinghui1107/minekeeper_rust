@@ -353,12 +353,20 @@ fn chord_gesture_simultaneous(games: i32) -> Result<(), String> {
         let pt = (cell.x + cell.w / 2, cell.y + cell.h / 2);
         v.button_down(mk_core::Button::Left, pt);
         v.button_down(mk_core::Button::Right, pt);
-        // 没有公开的 mode 查询，用「松手不落子」间接验证：chord 模式下松左键不翻开。
+        // 按在一个**未翻开**的格子上：进了 chord 模式，松手时 `apply_chord` 对未翻开的
+        // 格子直接返回，所以格数应当**不变**；若没进 chord 模式，松左键会走 `do_open`
+        // 把格子翻开，格数会 **+1** —— 两种情况因此可以区分开。
+        //
+        // 早期这里写的是 `< before`，而 `opened` 只增不减，断言恒假，这条检查永远不会红。
         let before = v.board().opened_count();
         v.button_up(mk_core::Button::Left, pt);
         v.button_up(mk_core::Button::Right, pt);
-        if v.board().opened_count() < before {
-            return Err(format!("seed={seed} 翻开的格子数倒退"));
+        if v.board().opened_count() != before {
+            return Err(format!(
+                "seed={seed} 左右同按松手后翻开了格子（{} → {}），说明没进入 chord 模式",
+                before,
+                v.board().opened_count()
+            ));
         }
     }
     Ok(())

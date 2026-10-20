@@ -16,6 +16,7 @@
 //! 下移靠 [`crate::raster::Canvas::set_origin`] 的平移变换实现，
 //! 所以 `view` 里的坐标一个都不用改。
 
+use crate::game::Difficulty;
 use crate::raster::Canvas;
 use crate::text::TextRenderer;
 use crate::theme::{self, Metrics, Rect, Rgb, Size};
@@ -346,6 +347,13 @@ impl TextField {
     fn end(&mut self) {
         self.caret = self.chars.len();
     }
+    /// 数值框的加减（上下箭头用）。空值先落到下限，再夹在 `[lo, hi]` 内。
+    fn bump(&mut self, delta: i32, lo: i32, hi: i32) {
+        let cur = self.value().unwrap_or(lo);
+        let v = (cur + delta).clamp(lo, hi);
+        self.chars = v.to_string().chars().collect();
+        self.caret = self.chars.len();
+    }
 }
 
 // ── 对话框 ──────────────────────────────────────────────────────────────────
@@ -422,6 +430,23 @@ struct Dropdown {
 }
 
 // ── Chrome ──────────────────────────────────────────────────────────────────
+
+/// 自定义雷区三行「数值框 + 上下箭头」的几何。绘制与命中测试共用同一份 ——
+/// 曾经绘制在 paint 里、命中在 handle 里各写一遍，箭头那一列干脆漏掉了，
+/// 结果按钮画出来却点不动。
+fn custom_rows(frame: Rect) -> [(Rect, Rect); 3] {
+    const ROW_H: i32 = 28;
+    const FIELD_H: i32 = 20;
+    let body_y = frame.y + 30; // 标题条（4 + 20）之下再空 6
+    let mut out = [(Rect::new(0, 0, 0, 0), Rect::new(0, 0, 0, 0)); 3];
+    for (i, slot) in out.iter_mut().enumerate() {
+        let ly = body_y + i as i32 * ROW_H;
+        let field = Rect::new(frame.x + 84, ly + 2, 82, FIELD_H);
+        let arrows = Rect::new(field.right(), field.y, 14, field.h);
+        *slot = (field, arrows);
+    }
+    out
+}
 
 /// 对话框的实际几何与折行结果。绘制与命中测试共用同一份，保证两者永远一致。
 struct DialogLayout {
@@ -640,8 +665,11 @@ impl Chrome {
         let d = self.dialog.as_ref()?;
 
         // 可用区域：左右各留 12，别压住菜单栏。
-        let avail_w = (win_w - 24).max(180);
-        let avail_h = (win_h - Self::BAR_HEIGHT - 16).max(100);
+        // 这两个下限只能**防止算出负数**，不能大于窗口本身 ——
+        // 早期写成 .max(180)/.max(100)，窗口只有 145 宽时（小档 8 列自定义雷区）
+        // 对话框会比客户区还宽，左右各被裁掉一截。
+        let avail_w = (win_w - 24).max(40);
+        let avail_h = (win_h - Self::BAR_HEIGHT - 16).max(40);
 
         let w = d.w.min(avail_w);
         // 左右各 16 的内边距，再留 16 给折行的「行首禁则」溢出（收尾标点不甩到下一行）。
@@ -681,10 +709,13 @@ impl Chrome {
             // 自定义雷区 / 英雄榜：固定布局
             _ => d.h,
         };
-        let h = h.min(avail_h).max(80);
+        // 不能再 `.max(80)` —— 那会把已经夹到 avail_h 以内的高度重新顶出去。
+        let h = h.min(avail_h);
 
-        let x = (win_w - w) / 2;
-        let y = (Self::BAR_HEIGHT + (win_h - Self::BAR_HEIGHT - h) / 2).max(Self::BAR_HEIGHT);
+        let x = ((win_w - w) / 2).max(0);
+        let y = (Self::BAR_HEIGHT + (win_h - Self::BAR_HEIGHT - h) / 2)
+            .max(Self::BAR_HEIGHT)
+            .min(win_h - h);
         Some(DialogLayout {
             frame: Rect::new(x, y, w, h),
             lines,
@@ -830,13 +861,42 @@ impl Chrome {
                     .iter()
                     .position(|(r, _)| r.contains(x, y))
                     .or_else(|| {
-                        // 自定义雷区：点某个数值框切换焦点
+                        // 自定义雷区：点数值框切换焦点，点上下箭头加减
                         if let Some(d) = self.dialog.as_mut() {
-                            if let DialogKind::Custom { focus, .. } = &mut d.kind {
-                                for i in 0..3 {
-                                    let ly = frame.y + 28 + 4 + i as i32 * 28;
-                                    if Rect::new(frame.x + 84, ly + 2, 82, 20).contains(x, y) {
+                            if let DialogKind::Custom {
+                                rows,
+                                cols,
+                                mines,
+                                focus,
+                            } = &mut d.kind
+                            {
+                                for (i, (fld, arrow)) in custom_rows(frame).iter().enumerate() {
+                                    if fld.contains(x, y) {
                                         *focus = i;
+                                        return Some(usize::MAX);
+                                    }
+                                    if arrow.contains(x, y) {
+                                        // 上半区加，下半区减
+                                        let delta = if y < arrow.y + arrow.h / 2 { 1 } else { -1 };
+                                        *focus = i;
+                                        let max_mines = Difficulty::max_mines_for(
+                                            rows.value().unwrap_or(Difficulty::MIN_ROWS),
+                                            cols.value().unwrap_or(Difficulty::MIN_COLS),
+                                        );
+                                        let (lo, hi, field) = match i {
+                                            0 => (
+                                                Difficulty::MIN_ROWS,
+                                                Difficulty::MAX_ROWS,
+                                                &mut *rows,
+                                            ),
+                                            1 => (
+                                                Difficulty::MIN_COLS,
+                                                Difficulty::MAX_COLS,
+                                                &mut *cols,
+                                            ),
+                                            _ => (Difficulty::MIN_MINES, max_mines, &mut *mines),
+                                        };
+                                        field.bump(delta, lo, hi);
                                         return Some(usize::MAX);
                                     }
                                 }
@@ -877,6 +937,9 @@ impl Chrome {
                         Some(DialogKind::Scores { .. })
                     );
                 if is_reset {
+                    // 清空纪录后由应用重新打开英雄榜。
+                    // 早期这里只 return，按钮画出来却什么都不做。
+                    self.close_dialog(DialogResult::ResetScores);
                     return ChromeOutcome::Redraw;
                 }
                 if is_primary {
@@ -955,7 +1018,7 @@ impl Chrome {
             DialogKind::Custom {
                 rows, cols, mines, ..
             } => {
-                let r = rows.value().unwrap_or(game_min_rows());
+                let r = rows.value().unwrap_or(Difficulty::MIN_ROWS);
                 let c = cols.value().unwrap_or(8);
                 let m = mines.value().unwrap_or(10);
                 DialogResult::Custom {
@@ -1126,6 +1189,7 @@ impl Chrome {
             } => {
                 let labels = ["高度(R):", "宽度(D):", "雷数(M):"];
                 let fields = [rows, cols, mines];
+                let geo = custom_rows(frame);
                 for i in 0..3 {
                     let ly = body.y + i as i32 * 28;
                     text.draw(
@@ -1136,9 +1200,8 @@ impl Chrome {
                         self.font_px,
                         theme::INK,
                     );
-                    let fr = Rect::new(body.x + 84, ly + 2, 82, 20);
+                    let (fr, sr) = geo[i];
                     self.paint_field(dst, fr, fields[i], *focus == i, text);
-                    let sr = Rect::new(fr.right(), fr.y, 14, fr.h);
                     dst.fill_rect(sr, theme::FACE);
                     dst.stroke_rect(sr, 1, theme::SHADOW);
                     dst.fill_polygon(
@@ -1196,12 +1259,6 @@ impl Chrome {
             dst.fill_rect(Rect::new(cx, r.y + 3, 1, r.h - 6), theme::INK);
         }
     }
-}
-
-/// 自定义雷区的行数下限。与 `game::Difficulty::MIN_ROWS` 一致；
-/// 这里复制一份是为了不让 chrome 依赖 game（chrome 只管画与输入）。
-fn game_min_rows() -> i32 {
-    5
 }
 
 #[cfg(test)]
@@ -1451,10 +1508,96 @@ mod tests {
             let mut cv = Canvas::new(800, 700).unwrap();
             cv.clear(theme::FACE);
             c.paint(&mut cv, 800, &mut t);
-            // 标题条是蓝色，用它证明对话框真的画上去了。
-            let (_, _, w, h) = cv.ink_bounds();
-            assert!(w > 100 && h > 100, "画面几乎空白");
+            // 用标题条的颜色证明对话框真的画上去了。
+            // 注意不能用 ink_bounds：画布已 clear 成不透明，它恒为整块画布。
+            let has_title = cv
+                .data()
+                .chunks_exact(4)
+                .any(|p| p[0] == MENU_SEL_BG.0 && p[1] == MENU_SEL_BG.1 && p[2] == MENU_SEL_BG.2);
+            assert!(has_title, "对话框标题条没画出来");
         }
+    }
+
+    /// 「重新计分」必须真的发出结果 —— 早期这个按钮画出来却什么都不做。
+    #[test]
+    fn scores_reset_button_emits_reset() {
+        let (mut c, mut t) = chrome();
+        c.open_scores([
+            ("12 秒".into(), "甲".into()),
+            ("45 秒".into(), "乙".into()),
+            ("99 秒".into(), "丙".into()),
+        ]);
+        let frame = c.dialog_layout(800, 700, &mut t).unwrap().frame;
+        let (reset, label) = c.dialog.as_ref().unwrap().buttons(frame)[1];
+        assert_eq!(label, "重新计分(&R)");
+        c.handle(
+            ChromeEvent::Click(reset.x + 5, reset.y + 5),
+            800,
+            700,
+            &mut t,
+        );
+        c.handle(
+            ChromeEvent::Release(reset.x + 5, reset.y + 5),
+            800,
+            700,
+            &mut t,
+        );
+        assert_eq!(c.take_dialog_result(), Some(DialogResult::ResetScores));
+        assert!(!c.is_modal(), "点重新计分后对话框应交由应用重开");
+    }
+
+    /// 自定义雷区的上下箭头必须真的能改数值，并被夹在合法范围内。
+    #[test]
+    fn custom_spin_arrows_adjust_values() {
+        let (mut c, mut t) = chrome();
+        c.open_custom(24, 30, 199);
+        let frame = c.dialog_layout(800, 700, &mut t).unwrap().frame;
+        let geo = custom_rows(frame);
+
+        let rows_value = |c: &Chrome| match &c.dialog.as_ref().unwrap().kind {
+            DialogKind::Custom { rows, .. } => rows.value().unwrap(),
+            _ => unreachable!(),
+        };
+
+        // 高度：点箭头下半区 → 24-1
+        let (_, arrow) = geo[0];
+        c.handle(
+            ChromeEvent::Click(arrow.x + 5, arrow.y + arrow.h - 3),
+            800,
+            700,
+            &mut t,
+        );
+        assert_eq!(rows_value(&c), 23);
+
+        // 连点到底不能越过下限 5
+        for _ in 0..40 {
+            c.handle(
+                ChromeEvent::Click(arrow.x + 5, arrow.y + arrow.h - 3),
+                800,
+                700,
+                &mut t,
+            );
+        }
+        assert_eq!(rows_value(&c), Difficulty::MIN_ROWS);
+
+        // 上半区 → 加
+        c.handle(
+            ChromeEvent::Click(arrow.x + 5, arrow.y + 3),
+            800,
+            700,
+            &mut t,
+        );
+        assert_eq!(rows_value(&c), Difficulty::MIN_ROWS + 1);
+
+        // 没点箭头、也没点字段的位置不该改值
+        let before = rows_value(&c);
+        c.handle(
+            ChromeEvent::Click(frame.x + 4, frame.y + 4),
+            800,
+            700,
+            &mut t,
+        );
+        assert_eq!(rows_value(&c), before);
     }
 
     /// 帮助菜单只保留「使用帮助」与「关于扫雷」两项，且内容互不相同。
@@ -1485,9 +1628,18 @@ mod tests {
         }
         let mut c = Chrome::new(menu_items());
         c.open_message("标题", &"很长的正文。".repeat(200));
-        for (w, h) in [(747, 688), (273, 316), (320, 240), (200, 140)] {
+        // (145, 300) 是小档 8 列自定义雷区的真实客户区宽度 —— 早期最小只测到 200，
+        // 而 180 的可用宽度下限恰好在 145 时会算出负的 x，测试因此漏过了这个 bug。
+        for (w, h) in [
+            (747, 688),
+            (273, 316),
+            (320, 240),
+            (200, 140),
+            (145, 300),
+            (200, 90),
+        ] {
             let l = c.dialog_layout(w, h, &mut t).expect("应有布局");
-            assert!(l.frame.x >= 0, "{w}x{h} 左边越界");
+            assert!(l.frame.x >= 0, "{w}x{h} 左边越界（x={}）", l.frame.x);
             assert!(
                 l.frame.right() <= w,
                 "{w}x{h} 右边越界（{} > {w}）",

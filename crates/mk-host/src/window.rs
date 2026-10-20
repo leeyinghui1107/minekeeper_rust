@@ -251,6 +251,12 @@ impl<A: AppHandler> ApplicationHandler for Runner<A> {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::RedrawRequested => self.app.redraw(&mut self.host),
             WindowEvent::Resized(_) => self.app.redraw(&mut self.host),
+            WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                // 窗口在不同 DPI 的显示器之间移动（Retina ↔ 外接 1x）时，
+                // `scale` 必须跟着更新，否则画面会一直按旧倍数呈现，直到重启。
+                self.host.scale = (scale_factor.floor() as i32).max(1);
+                self.app.redraw(&mut self.host);
+            }
             WindowEvent::Focused(on) => {
                 self.app.input(&mut self.host, InputEvent::Focus(on));
             }

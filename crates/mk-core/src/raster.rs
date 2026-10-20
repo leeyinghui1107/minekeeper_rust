@@ -1,4 +1,5 @@
-//! 光栅层：一块 BGRA/RGBA 缓冲 + 全部图元。
+//! 光栅层：一块 **RGBA8** 缓冲 + 全部图元（字节序 R,G,B,A —— 与 `tiny-skia` 一致，
+//! 也与 PNG 编码器直接兼容；早期注释里写的 BGRA 是错的）。
 //!
 //! # 为什么只有一个后端
 //!
@@ -303,6 +304,34 @@ impl Canvas {
         for y in 0..h {
             for x in 0..w {
                 if data[((y as u32 * w as u32 + x as u32) * 4) as usize + 3] == 0 {
+                    continue;
+                }
+                x0 = x0.min(x);
+                y0 = y0.min(y);
+                x1 = x1.max(x);
+                y1 = y1.max(y);
+            }
+        }
+        if x1 < x0 {
+            return (0, 0, 0, 0);
+        }
+        (x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+    }
+
+    /// 与给定**底色**不同的像素的包围盒。
+    ///
+    /// [`Canvas::ink_bounds`] 按 alpha 判定「着墨」，但 [`Canvas::clear`] 会把整块画布
+    /// 写成 alpha=255 —— 在已 clear 的画布上，`ink_bounds` 恒等于整块画布，
+    /// 拿它断言「画了东西没有」是恒真的。判断这个请用本函数。
+    pub fn ink_bounds_on(&self, bg: Rgb) -> (i32, i32, i32, i32) {
+        let (w, h) = (self.width(), self.height());
+        let data = self.data();
+        let (mut x0, mut y0, mut x1, mut y1) = (w, h, -1i32, -1i32);
+        for y in 0..h {
+            for x in 0..w {
+                let i = ((y as u32 * w as u32 + x as u32) * 4) as usize;
+                // 缓冲是 RGBA（R 在字节 0）
+                if data[i] == bg.0 && data[i + 1] == bg.1 && data[i + 2] == bg.2 {
                     continue;
                 }
                 x0 = x0.min(x);

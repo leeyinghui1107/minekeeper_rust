@@ -563,7 +563,8 @@ mod tests {
         cv.clear(FACE);
         let w = t.draw_in(&mut cv, Rect::new(0, 0, 120, 24), "游戏", 13.0, INK, 8);
         assert!(w > 0);
-        let (_, _, iw, ih) = cv.ink_bounds();
+        // 必须按底色判定：画布已 clear 成不透明，ink_bounds（按 alpha）恒为整块画布。
+        let (_, _, iw, ih) = cv.ink_bounds_on(FACE);
         assert!(iw > 8 && ih > 4, "文本几乎没画上去：{iw}x{ih}");
     }
 
@@ -686,7 +687,7 @@ mod tests {
         let mut cv = Canvas::new(200, 24).unwrap();
         cv.clear(FACE);
         t.draw_centered(&mut cv, Rect::new(0, 0, 200, 24), "扫雷", 13.0, INK);
-        let (x0, _, w, _) = cv.ink_bounds();
+        let (x0, _, w, _) = cv.ink_bounds_on(FACE);
         let left = x0;
         let right = 200 - (x0 + w);
         assert!(

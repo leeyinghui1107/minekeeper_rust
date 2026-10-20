@@ -62,11 +62,15 @@ struct App {
     left_click_chord: bool,
 
     clock_running: bool,
+    /// 窗口当前是否处于激活态。失活时秒表必须停住 —— 见 `after_input`。
+    focused: bool,
     /// 上一帧的 phase，用来检测「刚获胜」这个边沿。
     last_phase: game::Phase,
     seed: u64,
     /// 破纪录时挂起的待写入纪录，等姓名对话框返回。
     pending_record: Option<(Kind, i32)>,
+    /// 自定义雷区校验失败时暂存的值，关掉提示框后重新打开对话框。
+    pending_custom: Option<(i32, i32, i32)>,
 }
 
 impl App {
@@ -97,9 +101,11 @@ impl App {
             sound_on: true,
             left_click_chord: false,
             clock_running: false,
+            focused: true,
             last_phase: game::Phase::Ready,
             seed: 1,
             pending_record: None,
+            pending_custom: None,
         };
         app.wire_events();
         app.sync_view_options();
@@ -210,7 +216,9 @@ impl App {
         }
 
         let phase = self.view.board().phase;
-        if phase == game::Phase::Playing && !self.clock_running {
+        // **必须同时看 `focused`**：失活时 `stop_clock` 刚把表停掉，这里是同一轮
+        // 输入里紧接着执行的，若只看 phase 会把表立刻重新装上 —— 失活停表等于没做。
+        if phase == game::Phase::Playing && self.focused && !self.clock_running {
             self.start_clock(host);
         }
         if phase != game::Phase::Playing && self.clock_running {
@@ -326,14 +334,14 @@ impl App {
                     }
                 }
                 DialogResult::Custom { rows, cols, mines } => {
-                    // 先夹到合法范围再校验：数值框不做即时钳制，越界值到这里统一收敛。
-                    let rows = rows.clamp(Difficulty::MIN_ROWS, Difficulty::MAX_ROWS);
-                    let cols = cols.clamp(Difficulty::MIN_COLS, Difficulty::MAX_COLS);
-                    let mines =
-                        mines.clamp(Difficulty::MIN_MINES, Difficulty::max_mines_for(rows, cols));
+                    // **先校验、不先夹**。早先是「先 clamp 再 is_valid_custom」，而
+                    // is_valid_custom 判定的正是那几个区间，于是恒真 —— 提示框永远弹不出来，
+                    // 玩家输入 999 颗雷会被静默改写成上限值。
                     if Difficulty::is_valid_custom(rows, cols, mines) {
                         self.set_difficulty(host, Difficulty::custom(rows, cols, mines));
                     } else {
+                        // 原版行为：拒绝，并在关掉提示后把对话框放回原处等玩家改。
+                        self.pending_custom = Some((rows, cols, mines));
                         self.chrome.open_message(
                             "自定义雷区",
                             &format!(
@@ -343,7 +351,10 @@ impl App {
                                 Difficulty::MIN_COLS,
                                 Difficulty::MAX_COLS,
                                 Difficulty::MIN_MINES,
-                                Difficulty::max_mines_for(rows, cols)
+                                Difficulty::max_mines_for(
+                                    rows.clamp(Difficulty::MIN_ROWS, Difficulty::MAX_ROWS),
+                                    cols.clamp(Difficulty::MIN_COLS, Difficulty::MAX_COLS),
+                                )
                             ),
                         );
                     }
@@ -352,7 +363,12 @@ impl App {
                     self.scores.clear();
                     self.show_scores();
                 }
-                DialogResult::Dismissed => {}
+                DialogResult::Dismissed => {
+                    // 自定义雷区校验失败时，关掉提示后把对话框放回去继续改。
+                    if let Some((r, c, m)) = self.pending_custom.take() {
+                        self.chrome.open_custom(r, c, m);
+                    }
+                }
             }
         }
     }
@@ -456,7 +472,12 @@ impl AppHandler for App {
                     .open_message("扫雷帮助", mk_core::chrome::HELP_USING);
             }
             InputEvent::KeyDown(k) => self.view.key_down(k),
-            InputEvent::Focus(false) => self.stop_clock(host),
+            InputEvent::Focus(focused) => {
+                self.focused = focused;
+                if !focused {
+                    self.stop_clock(host);
+                }
+            }
             _ => {}
         }
 

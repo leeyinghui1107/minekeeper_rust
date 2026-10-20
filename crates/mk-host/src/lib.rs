@@ -79,7 +79,7 @@ pub enum EditKey {
 
 /// 窗口呈现能力。
 pub trait Host {
-    /// 把一整块 BGRA / RGBA 缓冲呈现到窗口。**必须**按 [`Host::scale`] 整数倍最近邻放大。
+    /// 把一整块 RGBA8 缓冲呈现到窗口。**必须**按 [`Host::scale`] 整数倍最近邻放大。
     fn present(&mut self, buf: &[u8], w: i32, h: i32);
 
     /// 请求重绘（把 `mk-core` 收集的脏矩形变成真正的失效请求）。

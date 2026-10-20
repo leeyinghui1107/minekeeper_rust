@@ -281,9 +281,20 @@ pub struct Board {
 
 impl Board {
     /// 建棋盘；雷数被夹在 `[1, rows*cols-1]`。
+    ///
+    /// 行/列至少为 1。**1×1 的棋盘放不下雷**（首点必须安全，而唯一那格就是全部），
+    /// 所以退化成 0 颗雷 —— 否则 `clamp(1, 0)` 会 panic。这是一条 pub API，
+    /// 不能假设调用方已经校验过（`--script` / `--genlayout` 就会把参数原样传进来）。
     pub fn new(rows: i32, cols: i32, mines: i32, rng: Rand) -> Self {
-        let mines = mines.clamp(1, rows * cols - 1);
-        let n = (rows * cols) as usize;
+        let rows = rows.max(1);
+        let cols = cols.max(1);
+        let total = rows * cols;
+        let mines = if total < 2 {
+            0
+        } else {
+            mines.clamp(1, total - 1)
+        };
+        let n = total as usize;
         Board {
             rows,
             cols,
@@ -591,7 +602,12 @@ impl Board {
         self.phase = Phase::Dead;
         self.exploded = at;
         let ai = self.idx(at);
-        self.open[ai] = true;
+        // 踩中的那颗雷也要算作「已翻开」，否则 `opened_count()` 会比 `is_open()`
+        // 的真实格数少 1。`apply_chord` 的爆炸路径已经先 `try_open` 过它，别重复计数。
+        if !self.open[ai] {
+            self.open[ai] = true;
+            self.opened += 1;
+        }
         self.reveal[ai] = true;
         res.boom = true;
 
