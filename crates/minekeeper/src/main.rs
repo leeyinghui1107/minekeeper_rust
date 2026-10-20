@@ -220,19 +220,26 @@ impl App {
             host.set_capture(on);
         }
 
+        self.sync_clock(host);
+
         let phase = self.view.board().phase;
-        // **必须同时看 `focused`**：失活时 `stop_clock` 刚把表停掉，这里是同一轮
-        // 输入里紧接着执行的，若只看 phase 会把表立刻重新装上 —— 失活停表等于没做。
-        if phase == game::Phase::Playing && self.focused && !self.clock_running {
-            self.start_clock(host);
-        }
-        if phase != game::Phase::Playing && self.clock_running {
-            self.stop_clock(host);
-        }
         if phase == game::Phase::Won && self.last_phase != game::Phase::Won {
             self.on_won();
         }
         self.last_phase = phase;
+    }
+
+    /// 让计时器跟 `board.phase` 与窗口焦点保持一致。
+    ///
+    /// **凡是会改变 phase 或棋盘的地方都必须调它**，否则会出现「新棋盘还没翻格，
+    /// 数码管却在跳」—— 从菜单换难度、从自定义雷区对话框确认，都是这种路径：
+    /// 它们不经过 `after_input`，早先就漏掉了这一步。
+    fn sync_clock(&mut self, host: &mut WinitHost) {
+        match clock_action(self.view.board().phase, self.focused, self.clock_running) {
+            ClockAction::Start => self.start_clock(host),
+            ClockAction::Stop => self.stop_clock(host),
+            ClockAction::Keep => {}
+        }
     }
 
     /// 获胜结算。破纪录时弹姓名框，等 [`DialogResult::Name`] 回来再落盘。
@@ -294,6 +301,8 @@ impl App {
         }
         let opts = self.menu_options();
         self.chrome.sync(opts);
+        // 菜单里换难度 / 开局同样会重建棋盘，但这条路径不经过 `after_input`。
+        self.sync_clock(host);
         self.flush(host);
     }
 
@@ -376,6 +385,9 @@ impl App {
                 }
             }
         }
+        // 对话框可能换了棋盘（自定义雷区），必须重新同步计时器，
+        // 否则旧表的每次 tick 都会加在新棋盘上。
+        self.sync_clock(host);
     }
 
     // ── 输入路由 ────────────────────────────────────────────────────────────
@@ -554,6 +566,28 @@ impl AppHandler for App {
     }
 }
 
+/// 计时器在该时点应当做什么。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ClockAction {
+    Start,
+    Stop,
+    Keep,
+}
+
+/// 计时规则的唯一判据：**只有本局真正开始（Playing）且窗口聚焦时才走表**。
+///
+/// 抽成纯函数是为了能被测试覆盖 —— 调用点漏掉一次 `sync_clock`，这条规则本身
+/// 并不会出错，但表现会是「没翻格，表却在跳」。
+fn clock_action(phase: game::Phase, focused: bool, running: bool) -> ClockAction {
+    if phase == game::Phase::Playing && focused && !running {
+        ClockAction::Start
+    } else if phase != game::Phase::Playing && running {
+        ClockAction::Stop
+    } else {
+        ClockAction::Keep
+    }
+}
+
 fn size_index(s: Size) -> usize {
     match s {
         Size::Small => 0,
@@ -610,5 +644,41 @@ fn main() {
             "SMOKE fail：事件循环结束了，但窗口从未建成并呈现"
         );
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::{clock_action, ClockAction};
+    use mk_core::game::Phase;
+
+    /// 只有「本局已开始 + 窗口聚焦 + 表没在跑」才启动。
+    #[test]
+    fn start_only_when_playing_and_focused() {
+        assert_eq!(
+            clock_action(Phase::Playing, true, false),
+            ClockAction::Start
+        );
+        assert_eq!(
+            clock_action(Phase::Playing, false, false),
+            ClockAction::Keep
+        );
+        assert_eq!(clock_action(Phase::Playing, true, true), ClockAction::Keep);
+    }
+
+    /// 离开 Playing（Ready / Dead / Won）时必须停 —— 换棋盘后回到 Ready 就是这条。
+    #[test]
+    fn stop_when_no_longer_playing() {
+        for p in [Phase::Ready, Phase::Dead, Phase::Won] {
+            assert_eq!(clock_action(p, true, true), ClockAction::Stop, "{p:?}");
+            assert_eq!(clock_action(p, false, true), ClockAction::Stop, "{p:?}");
+        }
+    }
+
+    /// 没在跑、也不该跑的时候什么都不做。
+    #[test]
+    fn keep_when_nothing_changes() {
+        assert_eq!(clock_action(Phase::Ready, true, false), ClockAction::Keep);
+        assert_eq!(clock_action(Phase::Dead, false, false), ClockAction::Keep);
     }
 }
