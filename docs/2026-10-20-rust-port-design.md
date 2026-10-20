@@ -1659,6 +1659,11 @@ dist/
 （macOS 用 `lipo -info` 确认双架构；Windows 读 PE 可选头的 Subsystem，必须是 2，
 否则说明 `#![windows_subsystem]` 被删了、双击会闪控制台）。
 
+**版本号一致性**：`Cargo.toml` 是唯一权威，另有四处必须与它相同 ——
+`scripts/build-all.sh` 的 `VERSION=`、设计文档头部、`CHANGELOG` 最新条目，
+以及（tag 触发 CI 时）tag 本身。这四处靠手动对齐，漏改不会有任何报错，
+所以 CI 有一条 `./scripts/check-version.sh` 专门守它。
+
 单包构建仍然可以：
 
 ```sh

@@ -3,6 +3,9 @@ name: ci
 on:
   push:
     branches: [main, master]
+    # tag 也触发：版本号校验只有在 tag 上才有意义（检查 tag 与 Cargo.toml 是否一致），
+    # 否则推出去的发布标签可能指向另一个版本。
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -34,6 +37,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y fonts-noto-cjk libasound2-dev
+
+      # 版本号四处手动对齐，没有任何机制保证一致。漏改一处的症状是
+      # 「二进制里是 0.1.0、文档写着别的」，而且不会有任何报错。
+      # 跑一次就够（与平台无关）。
+      - name: version consistency
+        if: runner.os == 'Linux'
+        run: ./scripts/check-version.sh
 
       - name: fmt
         run: cargo fmt --all -- --check
