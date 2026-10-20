@@ -4,7 +4,7 @@ Windows XP `winmine.exe` 的行为复刻，用 Rust 从零实现，**三平台�
 
 > 状态：**可交付**。内核、菜单栏、四个对话框、计时、纪录、音效全部接线；
 > 15 张渲染基线已录制并逐像素校验。设计文档见
-> [`../docs/2026-10-20-rust-port-design.md`](../docs/2026-10-20-rust-port-design.md)。
+> [`docs/2026-10-20-rust-port-design.md`](docs/2026-10-20-rust-port-design.md)。
 
 ## 与 Go 版的关系
 
