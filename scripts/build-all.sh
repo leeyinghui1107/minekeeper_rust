@@ -376,8 +376,9 @@ fi
 say "生成校验和"
 (
     cd "$DIST"
+    # 不能用 xargs：sha256 是 shell 函数，xargs 只能调可执行文件。
     find . -type f \( -name '*.exe' -o -name 'minekeeper-cli' -o -name 'minekeeper' \) \
-        | sort | xargs sha256 > SHA256SUMS
+        | sort | while IFS= read -r f; do sha256 "$f"; done > SHA256SUMS
 )
 ok "dist/SHA256SUMS"
 
