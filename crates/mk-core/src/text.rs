@@ -616,8 +616,11 @@ mod tests {
             return;
         }
         let src = "· 规则一：周围未翻开的格数等于该数字时，把这些格全部标雷（永远安全）。";
-        let lines = t.wrap(src, 428, 13.0);
-        assert!(lines.len() > 1, "这段应当折行");
+        // 宽度取 240 而不是 428：这段在 macOS 的 Arial 下量出来是 459px，用 428 只有
+        // 6.7% 余量，换成 Windows 的 CJK 字体（略窄）就翻不过阈值，测试会跨平台失败。
+        // 折行结果本来就依赖字体度量，测试应留足余量，而不是卡在临界值上。
+        let lines = t.wrap(src, 240, 13.0);
+        assert!(lines.len() > 1, "这段应当折行：{lines:?}");
         for l in &lines {
             assert!(l != "·", "出现孤立的项目符号行：{lines:?}");
         }
