@@ -76,6 +76,23 @@ jobs:
       - name: build
         run: cargo build -p minekeeper --release
 
+      # 能编译不等于能起窗口。静态 musl 交叉构建的 GUI 就是典型反例：
+      # 链接全过，但 winit 的 X11/Wayland 后端靠 dlopen，静态 musl 下必然失败。
+      # 这一步真的把窗口建出来、画出第一帧，再自动退出（--smoke-test）。
+      # Linux 无显示设备，用 Xvfb 起一个虚拟 X 服务。
+      - name: gui smoke test
+        shell: bash
+        run: |
+          set -e
+          bin=./target/release/minekeeper
+          if [ -f "$bin.exe" ]; then bin="$bin.exe"; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get install -y xvfb
+            xvfb-run -a "$bin" --smoke-test
+          else
+            "$bin" --smoke-test
+          fi
+
       # 体积守卫：超过上限说明 profile 配错了（默认 release 口径约翻倍）或拉进了多余依赖。
       # 上限按平台取 —— Linux 的 winit X11/Wayland 后端加 cpal/ALSA，实测 2.61 MB，
       # 而 macOS / Windows 是 1.2–1.5 MB。用同一个数字会在 Linux 上误报。

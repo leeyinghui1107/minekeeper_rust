@@ -10,7 +10,8 @@
 //! 反过来，喂给 `view` 的鼠标 y 坐标要先减掉菜单栏高度。
 #![windows_subsystem = "windows"]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::io::Write;
 use std::rc::Rc;
 
 use mk_core::chrome::{Chrome, ChromeEvent, ChromeOutcome, Command, DialogResult, Options};
@@ -71,10 +72,13 @@ struct App {
     pending_record: Option<(Kind, i32)>,
     /// 自定义雷区校验失败时暂存的值，关掉提示框后重新打开对话框。
     pending_custom: Option<(i32, i32, i32)>,
+    /// `--smoke-test`：建出窗口并画出第一帧即视为成功，随后退出。
+    /// CI 在 Xvfb 下用它验证「这个二进制真的能起窗口」，而不只是能链接。
+    smoke: Option<Rc<Cell<bool>>>,
 }
 
 impl App {
-    fn new(size: Size) -> App {
+    fn new(size: Size, smoke: Option<Rc<Cell<bool>>>) -> App {
         let mut view = View::new();
         view.apply_size(size);
 
@@ -106,6 +110,7 @@ impl App {
             seed: 1,
             pending_record: None,
             pending_custom: None,
+            smoke,
         };
         app.wire_events();
         app.sync_view_options();
@@ -528,6 +533,17 @@ impl AppHandler for App {
 
         let data = win.to_rgba();
         host.present(&data, ww, wh);
+
+        if let Some(ok) = &self.smoke {
+            // 只有窗口真的建出来才算数 —— `present` 在建窗失败时是静默返回的。
+            if !ok.get() && host.has_window() {
+                ok.set(true);
+                // 不用 println!：Windows 的 GUI 子系统没有可用的 stdout，
+                // `println!` 写失败会 panic。冒烟测试只看退出码。
+                let _ = writeln!(std::io::stdout(), "SMOKE ok {ww}x{wh}");
+                host.quit();
+            }
+        }
     }
 
     fn tick(&mut self, host: &mut WinitHost, id: u32) {
@@ -548,6 +564,7 @@ fn size_index(s: Size) -> usize {
 
 fn main() {
     let mut size = Size::Medium;
+    let mut smoke = false;
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < args.len() {
@@ -562,6 +579,12 @@ fn main() {
                     std::process::exit(2);
                 }
             },
+            // 建出窗口并画出第一帧即退出。CI 在 Xvfb 下用它证明
+            // 「这个二进制真的能起窗口」，而不只是能链接。
+            "--smoke-test" => {
+                smoke = true;
+                i += 1;
+            }
             other => {
                 eprintln!("未知参数：{other}");
                 std::process::exit(2);
@@ -569,7 +592,9 @@ fn main() {
         }
     }
 
-    let app = App::new(size);
+    // 冒烟测试的成败通过共享标志带出事件循环。
+    let ok = Rc::new(Cell::new(false));
+    let app = App::new(size, smoke.then(|| ok.clone()));
     let spec = WindowSpec {
         width: app.window_w(),
         height: app.window_h(),
@@ -577,6 +602,13 @@ fn main() {
     };
     if let Err(e) = run(app, WinitHost::new(spec)) {
         eprintln!("事件循环失败：{e}");
+        std::process::exit(1);
+    }
+    if smoke && !ok.get() {
+        let _ = writeln!(
+            std::io::stderr(),
+            "SMOKE fail：事件循环结束了，但窗口从未建成并呈现"
+        );
         std::process::exit(1);
     }
 }

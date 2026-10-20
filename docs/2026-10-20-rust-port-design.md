@@ -1667,7 +1667,12 @@ cargo build --release -p minekeeper-cli
 | Linux | 本机 `x86_64-unknown-linux-gnu` | **有**（ALSA） | GUI + CLI，动态链接 ELF |
 | macOS / Windows | 交叉到 `x86_64-unknown-linux-musl` | 无（CLI 不用音频） | **只有 CLI**，静态 pie ELF |
 
-**交叉构建不产出 GUI，这是刻意的。** 静态 musl 没有动态加载器，`dlopen` 必然失败；
+**交叉构建不产出 GUI，这是刻意的。** 交叉出来的 GUI 曾一度被当作产物发布，
+直到发现它根本起不了窗口（见下）。现在 CI 的 `build-gui` 会用
+`minekeeper --smoke-test` 在 Xvfb 下真的建一次窗口，这类「能编译不能运行」
+的产物不会再溜过去。
+
+ 静态 musl 没有动态加载器，`dlopen` 必然失败；
 而 `winit` 的 X11 / Wayland 后端正是通过 `libloading` 在运行时 dlopen
 `libX11` / `libwayland-client`（`cargo tree` 里能看到 x11-dl、wayland-client、libloading）。
 交叉出来的 GUI **能编译、能链接，但一建窗口就失败** —— 那种产物不该发布。
@@ -1689,6 +1694,10 @@ CLI 完全不碰窗口栈（对同一目标做依赖查询，winit/libloading �
 
 另外交叉链接必须显式指定 `-C linker=rust-lld` —— 默认会用宿主机的 `cc`，
 而 macOS 的 `ld` 不认识 `--as-needed`、`-Bstatic` 这些 ELF 参数。
+
+**GUI 冒烟测试**：`minekeeper --smoke-test` 会启动事件循环、等第一帧真正呈现
+（`Host::present` 在建窗失败时是静默返回的，所以还要确认 `has_window()`），
+打印 `SMOKE ok WxH` 后自动退出。退出码 0 才算通过。CI 在 Linux 上套 `xvfb-run`。
 
 **实测体积**（`opt-level="s"` + fat LTO + strip）：
 
@@ -1825,7 +1834,7 @@ Go 版 `testdata/scenes/*.txt` 的场景脚本**未经修改**即可直接使用
 
 | # | 项目 | 结论 | 证据 |
 |---|---|---|---|
-| U1 | 三平台能否编译 | ✅ | CI run #4：`build-gui` 在 ubuntu / macos / windows 全绿 |
+| U1 | 三平台能否编译**并起窗口** | ✅ | CI `build-gui` 三平台全绿，且新增 GUI 冒烟测试：真的建出窗口、画出第一帧才通过 |
 | U2 | CI 能否运行 | ✅ | run #4 六个 job 全绿 |
 | U3 | 左右键同时按下 | ✅ macOS / Windows 实测通过 | 用户真机验证（Linux 部分按用户决定不再追） |
 | U4 | 指针捕获 | ✅ | 用户真机验证：拖出窗口再回来松手正常 |

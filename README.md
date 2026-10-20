@@ -27,6 +27,7 @@ cargo run -p minekeeper-cli --release -- --golden          # 15 张渲染基线�
 cargo run -p minekeeper-cli --release -- --script testdata/scenes/expert-fresh.txt /tmp/a.png
 cargo run -p minekeeper-cli --release -- --ui /tmp/menu.png menu   # 离屏预览界面
 cargo build -p minekeeper --release    # GUI（当前平台上运行）
+cargo run -p minekeeper --release -- --smoke-test   # 建窗口 + 画一帧即退出（CI 用）
 
 # 一次出 macOS + Windows 的全部产物
 ./scripts/build-all.sh

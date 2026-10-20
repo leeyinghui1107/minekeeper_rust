@@ -68,6 +68,12 @@ impl WinitHost {
         }
     }
 
+    /// 窗口是否真的建出来了。宿主的 `present` 在建窗失败时是静默返回的，
+    /// 所以「呈现过一次」不等于「窗口存在」—— 冒烟测试要用这个判定。
+    pub fn has_window(&self) -> bool {
+        self.window.is_some()
+    }
+
     /// 请求一次重绘。
     pub fn request_redraw(&self) {
         if let Some(w) = &self.window {
