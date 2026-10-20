@@ -1916,7 +1916,26 @@ OK   headless (ubuntu-latest)
 
 至此 CI 能证明的部分全部为绿：三平台编译、86 项测试、22 项自检、
 15 张渲染基线在三个操作系统上逐像素一致、体积守卫。
-剩余只能靠真机手测的项目见 §14.2。
+
+### 14.2.4 第四次 CI（run #7，`7d82bdc`）
+
+加入 GUI 冒烟测试后的第一次全绿：
+
+```
+OK   build-gui (ubuntu-latest)    · gui smoke test 通过
+OK   build-gui (windows-latest)   · gui smoke test 通过
+OK   build-gui (macos-latest)     · gui smoke test 通过
+OK   headless (ubuntu-latest)
+OK   headless (windows-latest)
+OK   headless (macos-latest)
+```
+
+三个平台的 GUI 二进制都**真的建出了窗口并画出了第一帧**，不只是编译通过。
+Linux 那次套的是 `xvfb-run`。
+
+中间失败过一次（run #6）：runner 缺 `libxkbcommon-x11-0`，winit 的 X11 后端在
+运行时 dlopen 它，缺了会在建窗时 panic（exit 134）。这正是冒烟测试要抓的那类
+「能编译、能链接、运行时起不来」的问题 —— 从「靠推断」变成了「CI 直接报错」。
 
 ### 14.3 字体与许可
 
