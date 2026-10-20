@@ -1,0 +1,15 @@
+[package]
+name = "minekeeper-cli"
+description = "无窗口验证栈：自检、脚本出图、逐像素比对、雷位生成"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mk-core.workspace = true
+image.workspace = true
+
+[[bin]]
+name = "minekeeper-cli"
+path = "src/main.rs"

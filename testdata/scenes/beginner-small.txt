@@ -1,0 +1,43 @@
+# 自动生成的固定雷位（seed=777）
+board 16 16 40
+size small
+mines 0 3
+mines 0 7
+mines 0 10
+mines 0 14
+mines 1 5
+mines 1 7
+mines 2 2
+mines 3 2
+mines 3 5
+mines 4 5
+mines 5 6
+mines 5 7
+mines 5 10
+mines 5 15
+mines 6 6
+mines 6 9
+mines 6 12
+mines 7 3
+mines 7 4
+mines 7 7
+mines 7 15
+mines 8 0
+mines 8 3
+mines 8 4
+mines 8 7
+mines 8 13
+mines 9 4
+mines 9 6
+mines 9 7
+mines 10 0
+mines 11 5
+mines 11 10
+mines 11 12
+mines 13 9
+mines 13 11
+mines 13 14
+mines 14 13
+mines 15 5
+mines 15 6
+mines 15 14

@@ -1,0 +1,15 @@
+[package]
+name = "minekeeper"
+description = "MineKeeper 图形界面二进制"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mk-core.workspace = true
+mk-host.workspace = true
+
+[[bin]]
+name = "minekeeper"
+path = "src/main.rs"

@@ -1,0 +1,9 @@
+# 换行策略：仓库内一律存 LF（与 go/ 同口径），避免 checkout 出来的 .rs 每次都被
+# rustfmt 判定为「已修改」，也让 diff 只反映真实改动。
+* text=auto eol=lf
+
+# 渲染基线是二进制，绝不能做换行转换 —— 被改一个字节，--golden 就会报「格式错误」。
+*.png  binary
+*.icns binary
+*.ttf  binary
+*.ttc  binary

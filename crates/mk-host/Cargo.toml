@@ -1,0 +1,16 @@
+[package]
+name = "mk-host"
+description = "宿主抽象与平台后端：窗口、输入、定时器、像素呈现、音频"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mk-core.workspace = true
+winit.workspace = true
+softbuffer.workspace = true
+cpal.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }

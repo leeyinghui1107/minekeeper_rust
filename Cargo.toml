@@ -1,0 +1,46 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mk-core",
+    "crates/mk-host",
+    "crates/minekeeper",
+    "crates/minekeeper-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+
+[workspace.dependencies]
+mk-core = { path = "crates/mk-core" }
+mk-host = { path = "crates/mk-host" }
+
+# 光栅器：纯 Rust，跨平台逐像素确定。default-features 关掉，只留 std + simd。
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd"] }
+# 字形：轮廓解析 + 覆盖度栅格化，用来取格内数字的二值墨迹。
+fontdue = "0.9"
+# 界面文本：**惰性**解析，只栅格化真正画到的字形。
+# 对 CJK 字体是必须的 —— fontdue 会急切解析 22–64 MB 的全部字形，启动要 3–9 秒。
+ab_glyph = "0.2"
+ttf-parser = "0.25"
+# 宿主：窗口 + 像素呈现 + 音频输出。
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland"] }
+softbuffer = "0.4"
+cpal = "0.15"
+# 无窗口侧：PNG 编解码与纪录持久化。image 必须关掉默认 features（否则拉进全部格式）。
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 体积关键：默认 release 口径下同一份代码是 1.54 MB，加了这组是 740 KB（实测 2.1x）。
+[profile.release]
+opt-level     = "s"
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"
+strip         = "symbols"
+
+[profile.release.package."*"]
+opt-level = "s"
