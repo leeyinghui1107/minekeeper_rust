@@ -6,6 +6,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+# 与 mk-host 的 audio feature 对齐。交叉编译到 Linux 且没有 ALSA 头文件时用
+# `--no-default-features`，播放降级为静音。
+default = ["audio"]
+audio = ["mk-host/audio"]
+
 [dependencies]
 mk-core.workspace = true
 mk-host.workspace = true

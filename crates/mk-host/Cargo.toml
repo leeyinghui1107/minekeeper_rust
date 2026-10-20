@@ -10,7 +10,16 @@ license.workspace = true
 mk-core.workspace = true
 winit.workspace = true
 softbuffer.workspace = true
-cpal.workspace = true
+cpal = { workspace = true, optional = true }
+
+[features]
+# 默认开音频。交叉编译到 Linux 时通常没有 ALSA 头文件（alsa-sys 的编译期依赖），
+# 用 --no-default-features 关掉即可，播放自动降级为静音。
+# 注意：**不**放进 default。音频由下游二进制按需开启（见 minekeeper）。
+# 这样 `--no-default-features` 才能真正关掉它 —— 放进 default 时，
+# `workspace = true` 的依赖写法没法可靠地覆盖 default-features。
+default = []
+audio = ["dep:cpal"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_UI_WindowsAndMessaging"] }

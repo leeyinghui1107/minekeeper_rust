@@ -30,7 +30,7 @@
 pub mod audio;
 pub mod window;
 
-pub use audio::CpalPlayer;
+pub use audio::open_default as open_audio;
 pub use window::WinitHost;
 
 use mk_core::{Button, Key};

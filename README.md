@@ -32,6 +32,7 @@ cargo build -p minekeeper --release    # GUI（当前平台上运行）
 ./scripts/build-all.sh
 ./scripts/build-all.sh --macos      # 只出 macOS
 ./scripts/build-all.sh --windows    # 只出 Windows
+./scripts/build-all.sh --linux      # 只出 Linux
 ./scripts/build-all.sh --run        # 构建并启动
 ```
 
@@ -47,12 +48,18 @@ dist/
   macos/minekeeper-cli              通用命令行
   windows-x64/minekeeper.exe        PE Subsystem = 2 (GUI)，双击不闪控制台
   windows-x64/minekeeper-cli.exe
+  linux-x64/minekeeper              静态 musl ELF
+  linux-x64/minekeeper-cli
   SHA256SUMS
 ```
 
 **依赖**：Rust stable + 目标 `aarch64-apple-darwin` / `x86_64-apple-darwin` /
-`x86_64-pc-windows-gnu`，以及 Homebrew 的 `mingw-w64`（提供 `dlltool`，Windows
-交叉链接必需）。缺任何一个都可以用 `--install-deps` 让脚本自己装。
+`x86_64-pc-windows-gnu` / `x86_64-unknown-linux-musl`，以及 Homebrew 的 `mingw-w64`
+（提供 `dlltool`，Windows 交叉链接必需）。缺任何一个都可以用 `--install-deps` 让脚本自己装。
+
+**Linux 的两条路径**：在 Linux 上构建走本机 `x86_64-unknown-linux-gnu`，**带音频**；
+在 macOS/Windows 上交叉构建走 `x86_64-unknown-linux-musl`，静态 ELF 但**没有声音**
+（交叉编译拿不到 ALSA 头文件）。要完整的 Linux 版请在 Linux 上构建或走 CI。
 
 脚本会先跑一遍自检，再验证产物（macOS 查双架构、Windows 查 PE 子系统），
 不是「构建成功就算完」。

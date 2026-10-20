@@ -22,7 +22,7 @@ use mk_core::text::TextRenderer;
 use mk_core::view::SoundCue;
 use mk_core::{Canvas, Size, View};
 use mk_host::window::{run, AppHandler, WindowSpec, WinitHost};
-use mk_host::{CpalPlayer, EditKey, Host, InputEvent};
+use mk_host::{EditKey, Host, InputEvent};
 
 const CLOCK_TIMER: u32 = 0x4D4B;
 
@@ -89,7 +89,7 @@ impl App {
             chrome,
             fonts: FontStack::load_default(),
             text: TextRenderer::load_default(),
-            audio: Audio::new(Box::new(CpalPlayer::new())),
+            audio: Audio::new(mk_host::open_audio()),
             scores: Store::load_default(),
             pending: Rc::new(RefCell::new(Pending::default())),
             game_canvas: None,

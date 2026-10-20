@@ -2,9 +2,10 @@
 #
 # 一次构建出 macOS 与 Windows 的可执行文件。
 #
-#   ./scripts/build-all.sh                  构建 macOS + Windows
+#   ./scripts/build-all.sh                  构建 macOS + Windows + Linux
 #   ./scripts/build-all.sh --macos          只构建 macOS
 #   ./scripts/build-all.sh --windows        只构建 Windows
+#   ./scripts/build-all.sh --linux          只构建 Linux
 #   ./scripts/build-all.sh --install-deps   缺依赖时自动安装
 #   ./scripts/build-all.sh --run            构建完启动 macOS 版
 #   ./scripts/build-all.sh --clean          先清空 dist/
@@ -14,6 +15,7 @@
 #   dist/macos/minekeeper-cli          macOS 通用命令行（自检 / 出图 / 比对）
 #   dist/windows-x64/minekeeper.exe    Windows GUI（PE 子系统 = GUI，无控制台）
 #   dist/windows-x64/minekeeper-cli.exe
+#   dist/linux-x64/minekeeper        静态 musl（macOS 交叉编译时无音频）
 #   dist/SHA256SUMS
 #
 # 依赖（macOS 上）：
@@ -31,6 +33,7 @@ cd "$ROOT"
 DIST="$ROOT/dist"
 WANT_MACOS=0
 WANT_WINDOWS=0
+WANT_LINUX=0
 INSTALL_DEPS=0
 CLEAN=0
 RUN_AFTER=0
@@ -49,6 +52,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --macos)        WANT_MACOS=1 ;;
         --windows)      WANT_WINDOWS=1 ;;
+        --linux)        WANT_LINUX=1 ;;
         --install-deps) INSTALL_DEPS=1 ;;
         --clean)        CLEAN=1 ;;
         --run)          RUN_AFTER=1; WANT_MACOS=1 ;;
@@ -57,9 +61,10 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-if [ "$WANT_MACOS" -eq 0 ] && [ "$WANT_WINDOWS" -eq 0 ]; then
+if [ "$WANT_MACOS" -eq 0 ] && [ "$WANT_WINDOWS" -eq 0 ] && [ "$WANT_LINUX" -eq 0 ]; then
     WANT_MACOS=1
     WANT_WINDOWS=1
+    WANT_LINUX=1
 fi
 
 # ── 小工具 ──────────────────────────────────────────────────────────────────
@@ -239,10 +244,51 @@ PY
     ok "$out/minekeeper.exe"
 }
 
+# ── Linux ───────────────────────────────────────────────────────────────────
+
+build_linux() {
+    local out="$DIST/linux-x64"
+    mkdir -p "$out"
+
+    if [ "$(uname -s)" = "Linux" ]; then
+        say "Linux：本机构建（含音频）"
+        cargo build --release -p minekeeper -p minekeeper-cli
+        cp target/release/minekeeper "$out/"
+        cp target/release/minekeeper-cli "$out/"
+        ok "含 ALSA 音频"
+    else
+        say "Linux：交叉编译到 x86_64-unknown-linux-musl（静态）"
+        ensure_target x86_64-unknown-linux-musl
+
+        # 交叉编译拿不到 ALSA 头文件（alsa-sys 编译期依赖），关掉音频降级为静音。
+        # musl 把 dlopen 合进了 libc，没有单独的 libdl.a，用一个链接脚本占位。
+        local stub="$DIST/.musl-stub"
+        mkdir -p "$stub"
+        printf '/* musl: dlopen 已在 libc 内，无需单独的 libdl */\n' > "$stub/libdl.a"
+
+        RUSTFLAGS="-C linker=rust-lld -C link-arg=-L$stub" \
+            cargo build --release --target x86_64-unknown-linux-musl \
+            -p minekeeper -p minekeeper-cli --no-default-features
+        rm -rf "$stub"
+
+        cp target/x86_64-unknown-linux-musl/release/minekeeper "$out/"
+        cp target/x86_64-unknown-linux-musl/release/minekeeper-cli "$out/"
+        warn "交叉构建的 Linux 版**没有音频**（缺 ALSA）。要完整版请在 Linux 上构建或走 CI。"
+    fi
+
+    # 静态 ELF 的校验：确认真的是 x86-64 ELF，不是误产出的 Mach-O/PE。
+    if ! file -b "$out/minekeeper" | grep -q "ELF 64-bit.*x86-64"; then
+        die "$out/minekeeper 不是 x86-64 ELF"
+    fi
+    ok "ELF x86-64"
+    ok "$out/minekeeper"
+}
+
 # ── 执行 ────────────────────────────────────────────────────────────────────
 
 if [ "$WANT_MACOS" -eq 1 ]; then build_macos; fi
 if [ "$WANT_WINDOWS" -eq 1 ]; then build_windows; fi
+if [ "$WANT_LINUX" -eq 1 ]; then build_linux; fi
 
 # ── 校验和与摘要 ────────────────────────────────────────────────────────────
 
