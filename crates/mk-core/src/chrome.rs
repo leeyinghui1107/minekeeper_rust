@@ -38,8 +38,6 @@ pub enum Command {
     SizeLarge,
     /// **扩展**：左键单独点一个已翻开的数字也触发快速展开。默认关闭。
     LeftClickChord,
-    HelpContents,
-    HelpSearch,
     HelpUsing,
     HelpAbout,
 }
@@ -63,8 +61,6 @@ impl Command {
             // 600 起是**扩展**，故意落在原版菜单资源（510–593）之外，
             // 这样代码与文档里一眼能看出「这不是原版的功能」。
             Command::LeftClickChord => 600,
-            Command::HelpContents => 590,
-            Command::HelpSearch => 591,
             Command::HelpUsing => 592,
             Command::HelpAbout => 593,
         }
@@ -155,9 +151,7 @@ pub fn menu_items() -> Vec<MenuItem> {
         MenuItem::Submenu {
             label: "帮助(&H)".into(),
             items: vec![
-                MenuItem::entry(HelpContents, "目录(&C)\tF1"),
-                MenuItem::entry(HelpSearch, "查找帮助主题(&S)"),
-                MenuItem::entry(HelpUsing, "使用帮助(&H)"),
+                MenuItem::entry(HelpUsing, "使用帮助(&H)\tF1"),
                 MenuItem::Separator,
                 MenuItem::entry(HelpAbout, "关于扫雷(&A)"),
             ],
@@ -239,8 +233,8 @@ pub enum DialogResult {
 // 放在 mk-core 而不是二进制里：GUI 与 `--ui` 离屏预览必须用同一份文本，
 // 否则两边会悄悄走偏（早期 `--ui help` 用的就是一段缩短的副本）。
 
-/// 「帮助 → 目录」/ F1：完整帮助。
-pub const HELP_CONTENTS: &str = "\
+/// 「帮助 → 使用帮助」/ F1：唯一的帮助条目，承载完整的玩法说明。
+pub const HELP_USING: &str = "\
 目标
 在不触雷的情况下翻开所有非雷格子。翻开所有非雷格即获胜，点中雷即失败。
 
@@ -261,27 +255,11 @@ pub const HELP_CONTENTS: &str = "\
 
 扩展
 · 「游戏 → 单击快速展开」打开后，左键单独点一个数字也能快速展开。
-  这是本项目新增的，原版没有；关闭时与原版逐位一致。";
+  这是本项目新增的，原版没有；关闭时与原版逐位一致。
 
-/// 「帮助 → 查找帮助主题」。
-pub const HELP_SEARCH: &str = "\
-本帮助是固定的主题集，没有可搜索的关键字索引。
-
-可用的主题：
-· 玩法与胜负判定
-· 快速展开的两条规则
-· 键盘快捷键
-· 单击快速展开（本项目的扩展）
-
-请改用「帮助 → 目录」，或直接按 F1 查看完整帮助。";
-
-/// 「帮助 → 使用帮助」。
-pub const HELP_USING: &str = "\
-· 按 F1，或从「帮助」菜单里选择，即可打开帮助。
-· 帮助对话框打开期间，游戏不接收鼠标与键盘。
-· 按 Enter 或点「确定」关闭；按 Esc 也可以。
-· 「目录」是完整帮助；「查找帮助主题」列出可用主题。
-· 文本较长会自动折行，窗口缩小时对话框跟着缩窄。";
+帮助对话框
+· 打开期间游戏不接收鼠标与键盘。
+· 按 Enter 或点「确定」关闭；按 Esc 也可以。";
 
 /// 「帮助 → 关于扫雷」。
 pub const ABOUT_TEXT: &str = "\
@@ -1236,7 +1214,7 @@ mod tests {
         (c, TextRenderer::load_default())
     }
 
-    /// 菜单结构：两个顶级菜单，游戏菜单 20 项（含 6 条分隔符）。
+    /// 菜单结构：两个顶级菜单，游戏菜单 20 项（含 6 条分隔符），帮助菜单 3 项。
     ///
     /// 比原版多一项 —— 「单击快速展开」，是本项目唯一的**玩法扩展**，见设计文档 §3.3 D7。
     #[test]
@@ -1251,7 +1229,7 @@ mod tests {
         let MenuItem::Submenu { items: help, .. } = &items[1] else {
             panic!("第二项应是子菜单");
         };
-        assert_eq!(help.len(), 5);
+        assert_eq!(help.len(), 3);
     }
 
     /// 每个 Command 在菜单里恰好出现一次 —— 防止漏接命令。
@@ -1283,8 +1261,6 @@ mod tests {
             Command::SizeMedium,
             Command::SizeLarge,
             Command::LeftClickChord,
-            Command::HelpContents,
-            Command::HelpSearch,
             Command::HelpUsing,
             Command::HelpAbout,
         ] {
@@ -1481,18 +1457,23 @@ mod tests {
         }
     }
 
-    /// 三条帮助必须各有内容 —— 早期版本把它们都指向同一段文本。
+    /// 帮助菜单只保留「使用帮助」与「关于扫雷」两项，且内容互不相同。
     #[test]
-    fn help_topics_are_distinct() {
-        let a = super::HELP_CONTENTS;
-        let b = super::HELP_SEARCH;
-        let c = super::HELP_USING;
-        assert_ne!(a, b, "目录与查找主题内容相同");
-        assert_ne!(a, c, "目录与使用帮助内容相同");
-        assert_ne!(b, c, "查找主题与使用帮助内容相同");
-        for (name, t) in [("目录", a), ("查找主题", b), ("使用帮助", c)] {
-            assert!(!t.trim().is_empty(), "{name} 是空的");
-        }
+    fn help_menu_has_two_distinct_entries() {
+        let items = menu_items();
+        let MenuItem::Submenu { items: help, .. } = &items[1] else {
+            panic!("第二个顶级菜单应是帮助");
+        };
+        let entries: Vec<&Command> = help
+            .iter()
+            .filter_map(|i| match i {
+                MenuItem::Entry { cmd, .. } => Some(cmd),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(entries, vec![&Command::HelpUsing, &Command::HelpAbout]);
+        assert_ne!(super::HELP_USING, super::ABOUT_TEXT, "帮助与关于内容相同");
+        assert!(!super::HELP_USING.trim().is_empty());
     }
 
     /// 对话框无论正文多长、窗口多小，都不得画到窗口之外。

@@ -272,17 +272,9 @@ impl App {
             }
             Command::Scores => self.show_scores(),
             Command::Exit => host.quit(),
-            // 三项目录**必须各有内容** —— 早期版本把它们都指向同一段文本，
-            // 用户点哪个都是同一屏字。
-            Command::HelpContents => self
-                .chrome
-                .open_message("扫雷帮助 · 目录", mk_core::chrome::HELP_CONTENTS),
-            Command::HelpSearch => self
-                .chrome
-                .open_message("扫雷帮助 · 查找主题", mk_core::chrome::HELP_SEARCH),
             Command::HelpUsing => self
                 .chrome
-                .open_message("扫雷帮助 · 使用帮助", mk_core::chrome::HELP_USING),
+                .open_message("扫雷帮助", mk_core::chrome::HELP_USING),
             Command::HelpAbout => self
                 .chrome
                 .open_message("关于扫雷", mk_core::chrome::ABOUT_TEXT),
@@ -461,7 +453,7 @@ impl AppHandler for App {
             InputEvent::KeyDown(mk_core::Key::F2) => self.new_game(),
             InputEvent::KeyDown(mk_core::Key::F1) => {
                 self.chrome
-                    .open_message("扫雷帮助 · 目录", mk_core::chrome::HELP_CONTENTS);
+                    .open_message("扫雷帮助", mk_core::chrome::HELP_USING);
             }
             InputEvent::KeyDown(k) => self.view.key_down(k),
             InputEvent::Focus(false) => self.stop_clock(host),
