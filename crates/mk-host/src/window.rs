@@ -87,13 +87,6 @@ impl WinitHost {
         }
     }
 
-    /// 关闭窗口并结束事件循环。
-    pub fn close(&mut self) {
-        if let Some(w) = &self.window {
-            w.request_redraw();
-        }
-    }
-
     fn ensure_surface(&mut self, el: &ActiveEventLoop) {
         if self.window.is_some() {
             return;

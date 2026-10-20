@@ -5,7 +5,7 @@
 //! Linux: PNG + WM_CLASS）。
 
 use crate::raster::Canvas;
-use crate::theme::{Metrics, Size};
+use crate::theme::Metrics;
 
 /// 画一张 `size × size` 的图标：面色底 + 凸起格 + 雷。
 ///
@@ -26,15 +26,6 @@ pub fn app_icon(size: i32) -> Option<Canvas> {
 
 /// 与 Go 版 `createAppIcon` 一致的默认图标尺寸。
 pub const DEFAULT_ICON_SIZE: i32 = 32;
-
-/// 供自检使用的尺寸档位（小/中/大各取一张）。
-pub fn icon_sizes() -> [i32; 3] {
-    [
-        Size::Small.cell_px(),
-        Size::Medium.cell_px(),
-        Size::Large.cell_px(),
-    ]
-}
 
 #[cfg(test)]
 mod tests {

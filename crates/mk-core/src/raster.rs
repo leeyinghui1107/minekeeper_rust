@@ -48,10 +48,6 @@ impl Canvas {
         self.origin = Transform::from_translate(x as f32, y as f32);
     }
 
-    pub fn origin(&self) -> (i32, i32) {
-        (self.origin.tx as i32, self.origin.ty as i32)
-    }
-
     pub fn width(&self) -> i32 {
         self.pix.width() as i32
     }

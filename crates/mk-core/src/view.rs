@@ -6,7 +6,7 @@
 //! 移植自 Go 版 `internal/view/view.go`。这一层不认识窗口、不认识消息循环 ——
 //! 宿主只要把 [`Button`] / [`Key`] 事件投进来，再调用 [`View::paint`] 即可。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::game::{self, Board, Difficulty, Mark, Mood, Phase, Pos, Rand};
 use crate::pix;
@@ -765,12 +765,6 @@ pub fn find_cell(b: &Board, mut pred: impl FnMut(Pos) -> bool) -> Option<Pos> {
         }
     }
     None
-}
-
-/// 把 `HashMap` 风格的按下集合清空 —— 预留给将来的多选扩展。
-#[allow(dead_code)]
-fn empty_map() -> HashMap<Pos, bool> {
-    HashMap::new()
 }
 
 #[cfg(test)]
