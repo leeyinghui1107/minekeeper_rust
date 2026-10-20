@@ -2,8 +2,8 @@
 
 > 版本：v0.1（骨架阶段）
 > 日期：2026-10-20
-> 代码位置：[`../rust/`](../rust/)
-> 参照实现：[`../go/`](../go/)（Go 版 v1.0.0，Windows 专有）
+> 代码位置：本仓库根目录
+> 参照实现：`go/`（Go 版 v1.0.0，Windows 专有）—— 与本仓库同级，**不在本仓库内**
 
 ---
 
@@ -1908,10 +1908,12 @@ OK   headless (ubuntu-latest)
 
 ### 14.4 参考
 
-- Go 版实现：[`../go/`](../go/)
-- Go 版 README（含三档尺寸推导与已知偏差）：[`../go/README.md`](../go/README.md)
-- Go 版分层规则：[`../go/CONTRIBUTING.md`](../go/CONTRIBUTING.md)
-- 历史规格与方案：[`archive/2026-10-17-xp-minesweeper-2x-plan.md`](archive/2026-10-17-xp-minesweeper-2x-plan.md)
+- Go 版实现：`../go/`（与本仓库同级，不在本仓库内）
+- Go 版 README（含三档尺寸推导与已知偏差）：`../go/README.md`
+- Go 版分层规则：`../go/CONTRIBUTING.md`
+- 历史规格与方案：`../docs/archive/2026-10-17-xp-minesweeper-2x-plan.md`
+
+> 上面几项都在本仓库之外，只作为出处标注，不做成链接 —— 从 GitHub 上点开必然 404。
 
 ### 14.5 术语
 
