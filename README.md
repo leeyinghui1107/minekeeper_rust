@@ -28,9 +28,34 @@ cargo run -p minekeeper-cli --release -- --script testdata/scenes/expert-fresh.t
 cargo run -p minekeeper-cli --release -- --ui /tmp/menu.png menu   # 离屏预览界面
 cargo build -p minekeeper --release    # GUI（当前平台上运行）
 
-# macOS 打包成 .app
-./scripts/make-app.sh --run
+# 一次出 macOS + Windows 的全部产物
+./scripts/build-all.sh
+./scripts/build-all.sh --macos      # 只出 macOS
+./scripts/build-all.sh --windows    # 只出 Windows
+./scripts/build-all.sh --run        # 构建并启动
 ```
+
+## 构建产物
+
+```sh
+./scripts/build-all.sh
+```
+
+```
+dist/
+  macos/MineKeeper.app              通用包（arm64 + x86_64），双击运行
+  macos/minekeeper-cli              通用命令行
+  windows-x64/minekeeper.exe        PE Subsystem = 2 (GUI)，双击不闪控制台
+  windows-x64/minekeeper-cli.exe
+  SHA256SUMS
+```
+
+**依赖**：Rust stable + 目标 `aarch64-apple-darwin` / `x86_64-apple-darwin` /
+`x86_64-pc-windows-gnu`，以及 Homebrew 的 `mingw-w64`（提供 `dlltool`，Windows
+交叉链接必需）。缺任何一个都可以用 `--install-deps` 让脚本自己装。
+
+脚本会先跑一遍自检，再验证产物（macOS 查双架构、Windows 查 PE 子系统），
+不是「构建成功就算完」。
 
 ## 为什么内嵌字体
 
@@ -61,7 +86,7 @@ crates/
   mk-host/          宿主层：winit + softbuffer 窗口、cpal 音频（全部跨平台）
   minekeeper/       GUI 二进制
   minekeeper-cli/   无窗口二进制：自检 / 出图 / 比对 / 雷位生成 / 图标 / 界面预览
-scripts/            make-app.sh（macOS 打包）
+scripts/            build-all.sh（macOS 通用包 + Windows exe）
 testdata/
   scenes/           场景脚本（20 份，与 Go 版同格式，直接复用）
   golden/           渲染基线（15 张，--golden 逐像素校验）
