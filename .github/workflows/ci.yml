@@ -76,16 +76,20 @@ jobs:
       - name: build
         run: cargo build -p minekeeper --release
 
-      # 体积守卫：超过 2 MB 说明 profile 配错了或拉进了不该有的依赖。
+      # 体积守卫：超过上限说明 profile 配错了（默认 release 口径约翻倍）或拉进了多余依赖。
+      # 上限按平台取 —— Linux 的 winit X11/Wayland 后端加 cpal/ALSA，实测 2.61 MB，
+      # 而 macOS / Windows 是 1.2–1.5 MB。用同一个数字会在 Linux 上误报。
       - name: size guard
         shell: bash
         run: |
           set -e
           bin=$(find target/release -maxdepth 1 -type f -name 'minekeeper*' | head -1)
           size=$(stat -c%s "$bin" 2>/dev/null || stat -f%z "$bin")
-          echo "$bin = $size bytes"
-          if [ "$size" -gt 2097152 ]; then
-            echo "::error::二进制超过 2 MB，检查 profile 与 feature 开关"
+          limit=2097152          # 2 MB：macOS / Windows
+          [ "$RUNNER_OS" = "Linux" ] && limit=3145728   # 3 MB：Linux
+          echo "$bin = $size bytes (上限 $limit)"
+          if [ "$size" -gt "$limit" ]; then
+            echo "::error::二进制 $size 字节超过上限 $limit，检查 profile 与 feature 开关"
             exit 1
           fi
 
